@@ -1,0 +1,45 @@
+<div id="cy"></div>
+<script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+<script>
+async function loadGraph() {
+  const resp = await fetch("graph.json");
+  const dkg = await resp.json();
+
+  const elements = [
+    ...dkg.nodes.map(dkgNodeToCyNode),
+    ...dkg.edges.map(dkgEdgeToCyEdge)
+  ];
+
+  const cy = cytoscape({
+    container: document.getElementById("cy"),
+    elements: elements,
+    layout: { name: "breadthfirst" },
+
+    style: [
+      {
+        selector: "node",
+        style: {
+          label: "data(label)",
+          "text-valign": "center",
+          "text-halign": "center",
+          "font-size": "10px",
+          "background-color": "#888"
+        }
+      },
+      {
+        selector: "edge",
+        style: {
+          width: 2,
+          "line-color": "#bbb",
+          "target-arrow-shape": "triangle",
+          "target-arrow-color": "#bbb",
+          "curve-style": "bezier"
+        }
+      }
+    ]
+  });
+
+  setupStylingRules(cy);
+  setupInteraction(cy);
+}
+</script>
