@@ -200,15 +200,96 @@ class EntityClass(str, Enum):
     PACKAGE_PIN = "PackagePin"
     PBLOCK = "Pblock"
     BOARD_CONNECTOR = "BoardConnector"
+def make_node_canonical_name(node: DKGNode) -> str:
+    base = node.hier_path
+
+    cls = node.entity_class
+    if cls == EntityClass.FLIP_FLOP:
+        suffix = f"reg_{node.local_name}"
+    elif cls == EntityClass.MUX:
+        suffix = "mux"
+    elif cls == EntityClass.LUT:
+        suffix = "comb"
+    elif cls == EntityClass.BRAM:
+        suffix = "bram"
+    elif cls == EntityClass.DSP:
+        suffix = "dsp"
+    elif cls == EntityClass.IO_PORT:
+        suffix = f"port_{node.local_name}"
+    else:
+        suffix = node.local_name or cls.value.lower()
+
+    return f"{base}.{suffix}"
+def make_node_display_name(node: DKGNode) -> str:
+    if node.entity_class == EntityClass.FLIP_FLOP:
+        return f"Reg {node.local_name}"
+    if node.entity_class == EntityClass.BRAM:
+        return "BRAM"
+    if node.entity_class == EntityClass.MUX:
+        return "MUX"
+    if node.entity_class == EntityClass.LUT:
+        return "Logic"
+    if node.entity_class == EntityClass.DSP:
+        return "DSP"
+    if node.entity_class == EntityClass.IO_PORT:
+        return f"Port {node.local_name}"
+
+    return node.local_name or node.entity_class.value
+def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:
+    src = nodes[e.src_node].canonical_name
+    dst = nodes[e.dst_node].canonical_name
+
+    if e.bit_range:
+        msb, lsb = e.bit_range
+        sig = f"{e.signal_name}[{msb}:{lsb}]"
+    else:
+        sig = e.signal_name
+
+    return f"{src} → {dst} : {sig}"
+def make_edge_display_name(e: DKGEdge) -> str:
+    if e.bit_range:
+        msb, lsb = e.bit_range
+        return f"{e.signal_name}[{msb}:{lsb}]"
+    return e.signal_name
+def make_supernode_canonical_name(
+    sn: SuperNode,
+    nodes: dict[str, DKGNode]
+) -> str:
+    any_node = nodes[next(iter(sn.member_nodes))]
+    base = any_node.hier_path
+
+    return f"{base} : {sn.super_class.value}"
+def make_supernode_display_name(sn: SuperNode) -> str:
+    if sn.super_class == SuperClass.COMB_CLOUD:
+        return "Combinational Logic"
+    if sn.super_class == SuperClass.SEQ_CHAIN:
+        return "Sequential Chain"
+    if sn.super_class == SuperClass.ATOMIC:
+        return "Block"
+    if sn.super_class == SuperClass.ELIMINATED:
+        return "Collapsed"
+
+    return sn.super_class.value
+def make_superedge_canonical_name(
+    se: SuperEdge,
+    super_nodes: dict[str, SuperNode]
+) -> str:
+    src = super_nodes[se.src_node].canonical_name
+    dst = super_nodes[se.dst_node].canonical_name
+    return f"{src} → {dst}"
+def make_superedge_display_name(se: SuperEdge) -> str:
+    if len(se.relation_types) == 1:
+        return next(iter(se.relation_types)).value.replace("Relation", "")
+    return "Multiple Signals"
+
 
 @dataclass
 class DKGNode:
-    node_id: str                     # canonical unique ID
+    node_id: str                 # Internal ID
     entity_class: EntityClass
-
     hier_path: str                   # top.u1.u2
     local_name: str                  # e.g., u_core
-
+    canonical_name: Optional[str] = None
     # ---- Display / AI ----
     display_name: Optional[str] = None
     short_alias: Optional[str] = None
@@ -408,7 +489,6 @@ def merge_bit_edges_to_bus(edges: dict[str, DKGEdge]) -> dict[str, DKGEdge]:
             prev_bit = bit
 
         flush_bucket(current_bucket)
-
     return new_edges
 
 #endregion
@@ -422,17 +502,49 @@ def map_cell_type(t: str) -> EntityClass:
     if t in ["$add", "$sub", "$and", "$or"]:
         return EntityClass.RTL_BLOCK
     return EntityClass.RTL_BLOCK
+def cell_signature(cell: CellIR) -> str:
+    ports = sorted(
+        f"{p}:{cell.port_dirs[p]}:{len(bits)}"
+        for p, bits in cell.connections.items()
+    )
+    return "|".join([
+        cell.type,
+        cell.module,
+        ",".join(ports),
+    ])
+def signal_signature(e: DKGEdge) -> str:
+    if e.bit_range:
+        msb, lsb = e.bit_range
+        return f"{e.signal_name}[{msb}:{lsb}]"
+    return e.signal_name
+def edge_signature(e: DKGEdge) -> str:
+    return "|".join([
+        e.src_node,
+        e.dst_node,
+        e.relation_type.value,
+        e.flow_type.value,
+        signal_signature(e),
+    ])
+def make_edge_id(e: DKGEdge) -> str:
+    sig = edge_signature(e)
+    h = stable_hash(sig)
+    return f"E_{e.relation_type.value}_{h}"
+import hashlib
+
+def stable_hash(s: str, length=12) -> str:
+    return hashlib.sha1(s.encode()).hexdigest()[:length]
 nodes: dict[str, DKGNode] = {}
 
 for cell in cells:
-    nid = f"{cell.module}.{cell.name}"
-
+    sig = cell_signature(cell)
+    nid = f"N_{map_cell_type(cell.type).value}_{stable_hash(sig)}"
     nodes[nid] = DKGNode(
         node_id=nid,
         entity_class=map_cell_type(cell.type),
         hier_path=cell.module,
         local_name=cell.name,
     )
+    nodes[nid].canonical_name = make_node_canonical_name(nodes[nid])
     file, line = parse_src(cell.src)
     prov = Provenance(
         origin_file=file,
@@ -447,6 +559,7 @@ eid = 0
 for w in wires.values():
     for src in w.drivers:
         for dst in w.loads:
+            
             edge_id = f"e{eid}"
             eid += 1
 
@@ -473,6 +586,13 @@ for w in wires.values():
             nodes[src].out_edges.append(edge_id)
             nodes[dst].in_edges.append(edge_id)
 edges = merge_bit_edges_to_bus(edges)
+new_edges = {}
+for e in edges.values():
+    new_id = make_edge_id(e)
+    e.edge_id = new_id
+    new_edges[new_id] = e
+
+edges = new_edges
 #endregion
 #region Output Summary (Temporary)
 print("===== GRAPH SUMMARY =====")
@@ -529,11 +649,9 @@ plt.show()
 
 #endregion
 #region Make SubGraph
-
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Set, Tuple, Any, List
-
 #region View / Action Definitions
 class GraphViewType(str, Enum):
     Structural = "Structural"
@@ -560,7 +678,6 @@ class NodeAction(Enum):
     ELIMINATE = "eliminate"
 
 #endregion
-
 #region SuperGraph IR
 @dataclass
 class SuperNode:
@@ -570,6 +687,8 @@ class SuperNode:
     member_edges: Set[str]
     aggregated_attrs: Dict[str, Any] = field(default_factory=dict)
     provenances: List[Provenance] = field(default_factory=list)
+    canonical_name: Optional[str] = None          # "ALU combinational cloud"
+    display_name: Optional[str] = None            # "ALU"
 
 
 @dataclass
@@ -582,16 +701,62 @@ class SuperEdge:
     relation_types: Set[RelationType]
     flow_types: Set[EdgeFlowType]
     provenances: List[Provenance] = field(default_factory=list)
-
+    canonical_name: Optional[str] = None          # "alu_out → ex_reg"
+    display_name: Optional[str] = None            # "data[31:0]"
 
 @dataclass
 class SuperGraph:
     super_nodes: Dict[str, SuperNode]
     super_edges: Dict[Tuple[str, str], SuperEdge]
     node_to_super: Dict[str, str]
-
-
 #endregion
+#region ID Generation Helpers
+def supernode_signature(
+    view: GraphViewType,
+    super_class: SuperClass,
+    member_node_ids: set[str],
+    policy_version: str = "v1"
+) -> str:
+    nodes_part = ",".join(sorted(member_node_ids))
+    return "|".join([
+        view.value,
+        super_class.value,
+        policy_version,
+        nodes_part,
+    ])
+def make_supernode_id(
+    view: GraphViewType,
+    super_class: SuperClass,
+    member_node_ids: set[str],
+    policy_version: str = "v1"
+) -> str:
+    sig = supernode_signature(view, super_class, member_node_ids, policy_version)
+    h = stable_hash(sig)
+    return f"SN_{view.value}_{super_class.value}_{h}"
+def superedge_signature(
+    src_sn: str,
+    dst_sn: str,
+    member_edge_ids: set[str],
+    policy_version: str = "v1",
+) -> str:
+    edges_part = ",".join(sorted(member_edge_ids))
+    return "|".join([
+        src_sn,
+        dst_sn,
+        policy_version,
+        edges_part,
+    ])
+def make_superedge_id(
+    src_sn: str,
+    dst_sn: str,
+    member_edge_ids: set[str],
+    policy_version: str = "v1",
+) -> str:
+    sig = superedge_signature(src_sn, dst_sn, member_edge_ids, policy_version)
+    h = stable_hash(sig)
+    return f"SE_{h}"
+
+
 #region View Policy
 
 VIEW_POLICY: Dict[GraphViewType, Dict[EntityClass, NodeAction]] = {
@@ -641,6 +806,7 @@ class ViewBuilder:
             nbrs.add(e.dst_node)
         return nbrs
 
+    
     # -------- cycle 1 --------
 
     def cycle1_promote(self):
@@ -655,6 +821,8 @@ class ViewBuilder:
                 member_edges=set(),
                 provenances=list(n.provenances),
             )
+            sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+            sn.display_name = make_supernode_display_name(sn)
             self.super_nodes[sn.node_id] = sn
             self.node_to_super[n.node_id] = sn.node_id
 
@@ -689,12 +857,21 @@ class ViewBuilder:
             if not component:
                 continue
 
+            sn_id = make_supernode_id(
+                view=self.view,
+                super_class=SuperClass.COMB_CLOUD,
+                member_node_ids=component,
+                policy_version="v1"
+            )
+
             sn = SuperNode(
-                node_id=f"SN_MERGE_{len(self.super_nodes)}",
+                node_id=sn_id,
                 super_class=SuperClass.COMB_CLOUD,
                 member_nodes=component,
                 member_edges=set(),
             )
+            sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+            sn.display_name = make_supernode_display_name(sn)
 
             self.super_nodes[sn.node_id] = sn
             for n in component:
@@ -711,11 +888,18 @@ class ViewBuilder:
                 raise RuntimeError(f"Unassigned node in view {self.view}: {nid}")
 
             sn = SuperNode(
-                node_id=f"SN_ELIM_{nid}",
+                node_id=make_supernode_id(
+                    view=self.view,
+                    super_class=SuperClass.ELIMINATED,
+                    member_node_ids={nid},
+                    policy_version="v1"
+                ),
                 super_class=SuperClass.ELIMINATED,
                 member_nodes={nid},
                 member_edges=set(),
-            )
+                )
+            sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+            sn.display_name = make_supernode_display_name(sn)
 
             self.super_nodes[sn.node_id] = sn
             self.node_to_super[nid] = sn.node_id
@@ -734,7 +918,7 @@ class ViewBuilder:
             key = (src_sn, dst_sn)
             if key not in self.super_edges:
                 self.super_edges[key] = SuperEdge(
-                    edge_id=f"SE_{src_sn}_to_{dst_sn}",
+                    edge_id=make_superedge_id(src_sn, dst_sn, set()),
                     src_node=src_sn,
                     dst_node=dst_sn,
                     member_edges=set(),
@@ -742,6 +926,13 @@ class ViewBuilder:
                     relation_types=set(),
                     flow_types=set(),
                     provenances=[],
+                )
+                self.super_edges[key].canonical_name = make_superedge_canonical_name(
+                    self.super_edges[key],
+                    self.super_nodes
+                )
+                self.super_edges[key].display_name = make_superedge_display_name(
+                    self.super_edges[key]
                 )
 
             se = self.super_edges[key]
