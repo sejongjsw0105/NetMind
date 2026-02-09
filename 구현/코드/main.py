@@ -1,4 +1,5 @@
 #region Parser
+# .rpt/.xdc/.bd/.tcl 파서는 직접 추가 예정 
 from dataclasses import dataclass
 #region Common Classes
 @dataclass
@@ -59,7 +60,32 @@ SRC_DIR_WIN = r"C:\Users\User\NetMind\구현\예시"   # Windows 경로
 OUT_JSON_WIN = r"C:\Users\User\NetMind\구현\design.json"
 TOP_MODULE = "riscvsingle"
 # ==========================================
-
+def is_clock_name(name: str) -> bool:
+    n = name.lower()
+    return (
+        n == "clk" or
+        n.startswith("clk") or
+        n.endswith("_clk") or
+        "clock" in n
+    )
+def is_reset_name(name: str) -> bool:
+    n = name.lower()
+    return (
+        n == "rst" or
+        n.startswith("rst") or
+        n.startswith("reset")
+    )
+def is_active_low(name: str) -> bool:
+    return name.lower().endswith("_n")
+def is_ff_cell(cell_type: str) -> bool:
+    return cell_type in {
+        "$dff", "$adff", "$sdff",
+        "$dffe", "$sdffe"
+    }
+def is_async_reset_ff(cell_type: str) -> bool:
+    return cell_type == "$adff"
+def is_sync_reset_ff(cell_type: str) -> bool:
+    return cell_type == "$sdff"
 def win_to_wsl_path(win_path):
     """Windows → WSL 경로 변환 (정확 버전)"""
     p = Path(win_path).resolve()
@@ -200,6 +226,7 @@ class EntityClass(str, Enum):
     PACKAGE_PIN = "PackagePin"
     PBLOCK = "Pblock"
     BOARD_CONNECTOR = "BoardConnector"
+    
 def make_node_canonical_name(node: DKGNode) -> str:
     base = node.hier_path
 
@@ -367,6 +394,80 @@ class DKGEdge:
     #---- Provenance ----
     provenances: List[Provenance] = field(default_factory=list)
     primary_provenance: Optional[Provenance] = None
+def detect_clock_reset_signals(
+    nodes: Dict[str, DKGNode],
+    edges: Dict[str, DKGEdge],
+):
+    clock_nets = set()
+    reset_nets = set()
+
+    # 1️⃣ net name 기반
+    for e in edges.values():
+        if is_clock_name(e.signal_name):
+            clock_nets.add(e.signal_name)
+        if is_reset_name(e.signal_name):
+            reset_nets.add(e.signal_name)
+
+    # 2️⃣ FF cell 기반 보강
+    for n in nodes.values():
+        if n.entity_class != EntityClass.FLIP_FLOP:
+            continue
+
+        for eid in n.in_edges:
+            e = edges[eid]
+
+            if is_clock_name(e.signal_name):
+                clock_nets.add(e.signal_name)
+
+            if is_reset_name(e.signal_name):
+                reset_nets.add(e.signal_name)
+
+    return clock_nets, reset_nets
+def assign_edge_flow_types(
+    nodes: Dict[str, DKGNode],
+    edges: Dict[str, DKGEdge],
+    clock_nets: set[str],
+    reset_nets: set[str],
+):
+    for e in edges.values():
+        # Clock tree
+        if e.signal_name in clock_nets:
+            e.flow_type = EdgeFlowType.CLOCK_TREE
+            continue
+
+        # Reset
+        if e.signal_name in reset_nets:
+            if is_active_low(e.signal_name):
+                e.flow_type = EdgeFlowType.ASYNC_RESET
+            else:
+                e.flow_type = EdgeFlowType.ASYNC_RESET
+            continue
+
+        src = nodes[e.src_node]
+        dst = nodes[e.dst_node]
+
+        # Sequential boundary
+        if src.entity_class == EntityClass.FLIP_FLOP:
+            e.flow_type = EdgeFlowType.SEQ_LAUNCH
+        elif dst.entity_class == EntityClass.FLIP_FLOP:
+            e.flow_type = EdgeFlowType.SEQ_CAPTURE
+        else:
+            e.flow_type = EdgeFlowType.COMBINATIONAL
+def assign_clock_domains(
+    nodes: Dict[str, DKGNode],
+    edges: Dict[str, DKGEdge],
+    clock_nets: set[str],
+):
+    for n in nodes.values():
+        if n.entity_class != EntityClass.FLIP_FLOP:
+            continue
+
+        for eid in n.in_edges:
+            e = edges[eid]
+            if e.signal_name in clock_nets:
+                n.clock_domain = e.signal_name
+                break
+
 import re
 from collections import defaultdict
 
@@ -437,7 +538,7 @@ def merge_bit_edges_to_bus(edges: dict[str, DKGEdge]) -> dict[str, DKGEdge]:
             # 대표 edge 생성 (첫 edge 복사 기반)
             base_edge = edges_in_bucket[0]
             merged = DKGEdge(
-                edge_id=f"bus_e{new_eid}",
+                edge_id=f"bus_e{new_eid}", #어차피 이 함수 끝에서 재생성 됨.
                 src_node=base_edge.src_node,
                 dst_node=base_edge.dst_node,
                 relation_type=base_edge.relation_type,
@@ -593,6 +694,11 @@ for e in edges.values():
     new_edges[new_id] = e
 
 edges = new_edges
+clock_nets, reset_nets = detect_clock_reset_signals(nodes, edges)
+
+assign_clock_domains(nodes, edges, clock_nets)
+
+assign_edge_flow_types(nodes, edges, clock_nets, reset_nets)
 #endregion
 #region Output Summary (Temporary)
 print("===== GRAPH SUMMARY =====")
