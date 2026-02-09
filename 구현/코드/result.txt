@@ -1,0 +1,1274 @@
+================================================================================
+FILE: dkg\__init__.py
+================================================================================
+
+
+================================================================================
+FILE: main.py
+================================================================================
+   1: from __future__ import annotations
+   2: from dkg.config import YosysConfig
+   3: from dkg.debug import (
+   4:     plot_subgraph,
+   5:     print_fanout_summary,
+   6:     print_graph_summary,
+   7:     print_sample_node,
+   8:     trace_signal,
+   9: )
+  10: from dkg.graph_build import build_nodes_and_edges, build_wires_and_cells
+  11: from dkg.yosys_parser import parse_yosys
+  12: 
+  13: 
+  14: DEFAULT_CONFIG = YosysConfig(
+  15:     src_dir_win=r"C:\Users\User\NetMind\구현\예시",
+  16:     out_json_win=r"C:\Users\User\NetMind\구현\design.json",
+  17:     top_module="riscvsingle",
+  18: )
+  19: 
+  20: 
+  21: def main(config: YosysConfig, debug: bool = True) -> None:
+  22:     yosys = parse_yosys(config)
+  23:     wires, cells = build_wires_and_cells(yosys)
+  24:     nodes, edges = build_nodes_and_edges(wires, cells)
+  25: 
+  26:     if debug:
+  27:         print_graph_summary(wires, cells, nodes, edges)
+  28:         print_sample_node(nodes, edges)
+  29:         print_fanout_summary(wires)
+  30:         trace_signal(wires, "clk")
+  31:         plot_subgraph(nodes, edges, limit=30)
+  32: 
+  33: 
+  34: if __name__ == "__main__":
+  35:     main(DEFAULT_CONFIG, debug=True)
+
+
+================================================================================
+FILE: AICollector.py
+================================================================================
+   1: from pathlib import Path
+   2: 
+   3: def collect_py_files(output_txt: str = "result.txt"):
+   4:     base_path = Path(__file__).parent
+   5:     py_files = list(base_path.rglob("*.py"))
+   6: 
+   7:     def sort_key(path: Path):
+   8:         name = path.name.lower()
+   9:         if name == "__init__.py":
+  10:             return (0, str(path))
+  11:         if name == "main.py":
+  12:             return (1, str(path))
+  13:         return (2, str(path))
+  14: 
+  15:     py_files.sort(key=sort_key)
+  16: 
+  17:     with open(output_txt, "w", encoding="utf-8") as out:
+  18:         for py_file in py_files:
+  19:             relative_path = py_file.relative_to(base_path)
+  20: 
+  21:             out.write("=" * 80 + "\n")
+  22:             out.write(f"FILE: {relative_path}\n")
+  23:             out.write("=" * 80 + "\n")
+  24: 
+  25:             try:
+  26:                 with open(py_file, "r", encoding="utf-8") as f:
+  27:                     for idx, line in enumerate(f, start=1):
+  28:                         out.write(f"{idx:4d}: {line}")
+  29:             except Exception as e:
+  30:                 out.write(f"[ERROR] 파일을 읽을 수 없습니다: {e}\n")
+  31: 
+  32:             out.write("\n\n")
+  33: 
+  34: 
+  35: if __name__ == "__main__":
+  36:     collect_py_files()
+
+
+================================================================================
+FILE: dkg\config.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from dataclasses import dataclass
+   4: 
+   5: 
+   6: @dataclass
+   7: class YosysConfig:
+   8:     src_dir_win: str
+   9:     out_json_win: str
+  10:     top_module: str
+
+
+================================================================================
+FILE: dkg\debug.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: import random
+   4: from typing import Dict, Iterable, List
+   5: 
+   6: from .graph import DKGEdge, DKGNode
+   7: from .ir import CellIR, Wire
+   8: 
+   9: 
+  10: def print_graph_summary(wires: Dict[int, Wire], cells: List[CellIR], nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge]) -> None:
+  11:     print("===== GRAPH SUMMARY =====")
+  12:     print(f"Total wires   : {len(wires)}")
+  13:     print(f"Total cells   : {len(cells)}")
+  14:     print(f"Total nodes   : {len(nodes)}")
+  15:     print(f"Total edges   : {len(edges)}")
+  16:     print("=========================")
+  17: 
+  18: 
+  19: def print_sample_node(nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge], max_edges: int = 5) -> None:
+  20:     if not nodes:
+  21:         print("No nodes available.")
+  22:         return
+  23: 
+  24:     sample = random.choice(list(nodes.values()))
+  25:     print("\n===== SAMPLE NODE =====")
+  26:     print("Node:", sample.node_id, sample.entity_class)
+  27:     print("IN edges:", len(sample.in_edges))
+  28:     print("OUT edges:", len(sample.out_edges))
+  29: 
+  30:     for eid in sample.out_edges[:max_edges]:
+  31:         e = edges[eid]
+  32:         print("  ->", e.signal_name, "->", e.dst_node)
+  33:     print("=========================")
+  34: 
+  35: 
+  36: def print_fanout_summary(wires: Dict[int, Wire]) -> None:
+  37:     fanouts = [len(w.loads) for w in wires.values() if w.loads]
+  38:     if not fanouts:
+  39:         print("\nMax fanout: 0")
+  40:         print("Avg fanout: 0")
+  41:         print("=========================")
+  42:         return
+  43: 
+  44:     print("\nMax fanout:", max(fanouts))
+  45:     print("Avg fanout:", sum(fanouts) / len(fanouts))
+  46:     print("=========================")
+  47: 
+  48: 
+  49: def trace_signal(wires: Dict[int, Wire], target: str) -> None:
+  50:     print("\n===== TRACE SIGNAL:", target, "=====")
+  51:     for w in wires.values():
+  52:         if w.name == target:
+  53:             print("Drivers:", w.drivers)
+  54:             print("Loads  :", w.loads)
+  55:     print("=========================")
+  56: 
+  57: 
+  58: def plot_subgraph(nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge], limit: int = 30) -> None:
+  59:     try:
+  60:         import networkx as nx
+  61:         import matplotlib.pyplot as plt
+  62:     except Exception as exc:
+  63:         print("Plot skipped:", exc)
+  64:         return
+  65: 
+  66:     g = nx.DiGraph()
+  67:     for nid in nodes:
+  68:         g.add_node(nid)
+  69: 
+  70:     for e in edges.values():
+  71:         g.add_edge(e.src_node, e.dst_node, label=e.signal_name)
+  72: 
+  73:     sub_nodes = list(nodes.keys())[:limit]
+  74: 
+  75:     def clean_label(name: str) -> str:
+  76:         return name.replace("\\", "").replace("$", "")
+  77: 
+  78:     h = g.subgraph(sub_nodes)
+  79:     labels = {n: clean_label(n) for n in h.nodes()}
+  80: 
+  81:     nx.draw(h, labels=labels, with_labels=True, node_size=500, font_size=6)
+  82:     plt.show()
+
+
+================================================================================
+FILE: dkg\graph.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from dataclasses import dataclass, field
+   4: from enum import Enum
+   5: from typing import Any, Dict, List, Optional, Tuple
+   6: 
+   7: from .provenance import Provenance
+   8: 
+   9: 
+  10: class EntityClass(str, Enum):
+  11:     MODULE_INSTANCE = "ModuleInstance"
+  12:     RTL_BLOCK = "RTLBlock"
+  13:     FSM = "FSM"
+  14: 
+  15:     FLIP_FLOP = "FlipFlop"
+  16:     LUT = "LUT"
+  17:     MUX = "MUX"
+  18:     DSP = "DSP"
+  19:     BRAM = "BRAM"
+  20: 
+  21:     IO_PORT = "IOPort"
+  22:     PACKAGE_PIN = "PackagePin"
+  23:     PBLOCK = "Pblock"
+  24:     BOARD_CONNECTOR = "BoardConnector"
+  25: 
+  26: 
+  27: class RelationType(str, Enum):
+  28:     DATA = "DataRelation"
+  29:     CLOCK = "ClockRelation"
+  30:     RESET = "ResetRelation"
+  31:     PARAMETER = "ParameterRelation"
+  32:     CONSTRAINT = "ConstraintRelation"
+  33:     PHYSICAL_MAP = "PhysicalMappingRelation"
+  34: 
+  35: 
+  36: class EdgeFlowType(str, Enum):
+  37:     COMBINATIONAL = "combinational"
+  38:     SEQ_LAUNCH = "sequential_launch"
+  39:     SEQ_CAPTURE = "sequential_capture"
+  40:     CLOCK_TREE = "clock_tree"
+  41:     ASYNC_RESET = "async_reset"
+  42: 
+  43: 
+  44: @dataclass
+  45: class DKGNode:
+  46:     node_id: str
+  47:     entity_class: EntityClass
+  48:     hier_path: str
+  49:     local_name: str
+  50:     canonical_name: Optional[str] = None
+  51: 
+  52:     display_name: Optional[str] = None
+  53:     short_alias: Optional[str] = None
+  54: 
+  55:     parameters: Dict[str, str] = field(default_factory=dict)
+  56:     attributes: Dict[str, str] = field(default_factory=dict)
+  57: 
+  58:     clock_domain: Optional[str] = None
+  59:     arrival_time: Optional[float] = None
+  60:     required_time: Optional[float] = None
+  61:     slack: Optional[float] = None
+  62: 
+  63:     in_edges: List[str] = field(default_factory=list)
+  64:     out_edges: List[str] = field(default_factory=list)
+  65: 
+  66:     provenances: List[Provenance] = field(default_factory=list)
+  67:     primary_provenance: Optional[Provenance] = None
+  68: 
+  69: 
+  70: @dataclass
+  71: class DKGEdge:
+  72:     edge_id: str
+  73:     src_node: str
+  74:     dst_node: str
+  75: 
+  76:     relation_type: RelationType
+  77:     flow_type: EdgeFlowType
+  78: 
+  79:     signal_name: str
+  80:     canonical_name: str
+  81:     bit_range: Optional[Tuple[int, int]] = None
+  82:     net_id: Optional[str] = None
+  83: 
+  84:     driver_type: Optional[str] = None
+  85:     fanout_count: Optional[int] = None
+  86: 
+  87:     clock_signal: Optional[str] = None
+  88:     reset_signal: Optional[str] = None
+  89:     clock_domain_id: Optional[str] = None
+  90: 
+  91:     timing_exception: Optional[str] = None
+  92:     parameters: Dict[str, Any] = field(default_factory=dict)
+  93: 
+  94:     delay: Optional[float] = None
+  95:     arrival_time: Optional[float] = None
+  96:     required_time: Optional[float] = None
+  97:     slack: Optional[float] = None
+  98: 
+  99:     attributes: Dict[str, Any] = field(default_factory=dict)
+ 100: 
+ 101:     provenances: List[Provenance] = field(default_factory=list)
+ 102:     primary_provenance: Optional[Provenance] = None
+ 103: 
+ 104: 
+ 105: def make_node_canonical_name(node: DKGNode) -> str:
+ 106:     base = node.hier_path
+ 107: 
+ 108:     cls = node.entity_class
+ 109:     if cls == EntityClass.FLIP_FLOP:
+ 110:         suffix = f"reg_{node.local_name}"
+ 111:     elif cls == EntityClass.MUX:
+ 112:         suffix = "mux"
+ 113:     elif cls == EntityClass.LUT:
+ 114:         suffix = "comb"
+ 115:     elif cls == EntityClass.BRAM:
+ 116:         suffix = "bram"
+ 117:     elif cls == EntityClass.DSP:
+ 118:         suffix = "dsp"
+ 119:     elif cls == EntityClass.IO_PORT:
+ 120:         suffix = f"port_{node.local_name}"
+ 121:     else:
+ 122:         suffix = node.local_name or cls.value.lower()
+ 123: 
+ 124:     return f"{base}.{suffix}"
+ 125: 
+ 126: 
+ 127: def make_node_display_name(node: DKGNode) -> str:
+ 128:     if node.entity_class == EntityClass.FLIP_FLOP:
+ 129:         return f"Reg {node.local_name}"
+ 130:     if node.entity_class == EntityClass.BRAM:
+ 131:         return "BRAM"
+ 132:     if node.entity_class == EntityClass.MUX:
+ 133:         return "MUX"
+ 134:     if node.entity_class == EntityClass.LUT:
+ 135:         return "Logic"
+ 136:     if node.entity_class == EntityClass.DSP:
+ 137:         return "DSP"
+ 138:     if node.entity_class == EntityClass.IO_PORT:
+ 139:         return f"Port {node.local_name}"
+ 140: 
+ 141:     return node.local_name or node.entity_class.value
+ 142: 
+ 143: 
+ 144: def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:
+ 145:     src = nodes[e.src_node].canonical_name
+ 146:     dst = nodes[e.dst_node].canonical_name
+ 147: 
+ 148:     if e.bit_range:
+ 149:         msb, lsb = e.bit_range
+ 150:         sig = f"{e.signal_name}[{msb}:{lsb}]"
+ 151:     else:
+ 152:         sig = e.signal_name
+ 153: 
+ 154:     return f"{src} -> {dst} : {sig}"
+ 155: 
+ 156: 
+ 157: def make_edge_display_name(e: DKGEdge) -> str:
+ 158:     if e.bit_range:
+ 159:         msb, lsb = e.bit_range
+ 160:         return f"{e.signal_name}[{msb}:{lsb}]"
+ 161:     return e.signal_name
+
+
+================================================================================
+FILE: dkg\graph_build.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from collections import defaultdict
+   4: from typing import Dict, Iterable, List, Optional, Tuple
+   5: 
+   6: from .graph import (
+   7:     DKGEdge,
+   8:     DKGNode,
+   9:     EdgeFlowType,
+  10:     EntityClass,
+  11:     RelationType,
+  12:     make_node_canonical_name,
+  13: )
+  14: from .ir import CellIR, Wire
+  15: from .provenance import Provenance, add_provenance, merge_provenances_edges
+  16: from .utils import (
+  17:     is_active_low,
+  18:     is_clock_name,
+  19:     is_reset_name,
+  20:     parse_src,
+  21:     split_signal_bit,
+  22:     stable_hash,
+  23: )
+  24: 
+  25: 
+  26: def get_wire(wires: Dict[int, Wire], wid) -> Optional[Wire]:
+  27:     if isinstance(wid, str):
+  28:         return None
+  29:     if wid not in wires:
+  30:         wires[wid] = Wire(wid)
+  31:     return wires[wid]
+  32: 
+  33: 
+  34: def build_wires_and_cells(yosys: dict) -> Tuple[Dict[int, Wire], List[CellIR]]:
+  35:     wires: Dict[int, Wire] = {}
+  36:     cells: List[CellIR] = []
+  37: 
+  38:     for mod in yosys.get("modules", {}).values():
+  39:         for netname, netinfo in mod.get("netnames", {}).items():
+  40:             src = netinfo.get("src")
+  41:             for wid in netinfo.get("bits", []):
+  42:                 w = get_wire(wires, wid)
+  43:                 if w:
+  44:                     w.name = netname
+  45:                     w.src = src
+  46: 
+  47:     for mod_name, mod in yosys.get("modules", {}).items():
+  48:         for cname, c in mod.get("cells", {}).items():
+  49:             cells.append(
+  50:                 CellIR(
+  51:                     name=cname,
+  52:                     type=c["type"],
+  53:                     module=mod_name,
+  54:                     port_dirs=c["port_directions"],
+  55:                     connections=c["connections"],
+  56:                     src=c.get("src"),
+  57:                 )
+  58:             )
+  59: 
+  60:     return wires, cells
+  61: 
+  62: 
+  63: def map_cell_type(t: str) -> EntityClass:
+  64:     if t in ["$adff", "$dff"]:
+  65:         return EntityClass.FLIP_FLOP
+  66:     if t in ["$mux", "$pmux"]:
+  67:         return EntityClass.MUX
+  68:     if t in ["$add", "$sub", "$and", "$or"]:
+  69:         return EntityClass.RTL_BLOCK
+  70:     return EntityClass.RTL_BLOCK
+  71: 
+  72: 
+  73: def cell_signature(cell: CellIR) -> str:
+  74:     ports = sorted(
+  75:         f"{p}:{cell.port_dirs[p]}:{len(bits)}"
+  76:         for p, bits in cell.connections.items()
+  77:     )
+  78:     return "|".join(
+  79:         [
+  80:             cell.type,
+  81:             cell.module,
+  82:             ",".join(ports),
+  83:         ]
+  84:     )
+  85: 
+  86: 
+  87: def signal_signature(e: DKGEdge) -> str:
+  88:     if e.bit_range:
+  89:         msb, lsb = e.bit_range
+  90:         return f"{e.signal_name}[{msb}:{lsb}]"
+  91:     return e.signal_name
+  92: 
+  93: 
+  94: def edge_signature(e: DKGEdge) -> str:
+  95:     return "|".join(
+  96:         [
+  97:             e.src_node,
+  98:             e.dst_node,
+  99:             e.relation_type.value,
+ 100:             e.flow_type.value,
+ 101:             signal_signature(e),
+ 102:         ]
+ 103:     )
+ 104: 
+ 105: 
+ 106: def make_edge_id(e: DKGEdge) -> str:
+ 107:     sig = edge_signature(e)
+ 108:     h = stable_hash(sig)
+ 109:     return f"E_{e.relation_type.value}_{h}"
+ 110: 
+ 111: 
+ 112: def make_node_id(cell: CellIR) -> str:
+ 113:     sig = cell_signature(cell)
+ 114:     return f"N_{map_cell_type(cell.type).value}_{stable_hash(sig)}"
+ 115: 
+ 116: 
+ 117: def connect_wires_to_cells(wires: Dict[int, Wire], cells: Iterable[CellIR]) -> None:
+ 118:     cell_id_map: Dict[str, str] = {}
+ 119:     for cell in cells:
+ 120:         cell_key = f"{cell.module}.{cell.name}"
+ 121:         cell_id_map[cell_key] = make_node_id(cell)
+ 122: 
+ 123:     for cell in cells:
+ 124:         node_id = cell_id_map[f"{cell.module}.{cell.name}"]
+ 125:         for port, bits in cell.connections.items():
+ 126:             direction = cell.port_dirs[port]
+ 127:             for wid in bits:
+ 128:                 w = get_wire(wires, wid)
+ 129:                 if not w:
+ 130:                     continue
+ 131:                 if direction == "output":
+ 132:                     w.drivers.append(node_id)
+ 133:                 else:
+ 134:                     w.loads.append(node_id)
+ 135: 
+ 136: 
+ 137: def detect_clock_reset_signals(
+ 138:     nodes: Dict[str, DKGNode],
+ 139:     edges: Dict[str, DKGEdge],
+ 140: ) -> Tuple[set[str], set[str]]:
+ 141:     clock_nets: set[str] = set()
+ 142:     reset_nets: set[str] = set()
+ 143: 
+ 144:     for e in edges.values():
+ 145:         if is_clock_name(e.signal_name):
+ 146:             clock_nets.add(e.signal_name)
+ 147:         if is_reset_name(e.signal_name):
+ 148:             reset_nets.add(e.signal_name)
+ 149: 
+ 150:     for n in nodes.values():
+ 151:         if n.entity_class != EntityClass.FLIP_FLOP:
+ 152:             continue
+ 153:         for eid in n.in_edges:
+ 154:             e = edges[eid]
+ 155:             if is_clock_name(e.signal_name):
+ 156:                 clock_nets.add(e.signal_name)
+ 157:             if is_reset_name(e.signal_name):
+ 158:                 reset_nets.add(e.signal_name)
+ 159: 
+ 160:     return clock_nets, reset_nets
+ 161: 
+ 162: 
+ 163: def assign_edge_flow_types(
+ 164:     nodes: Dict[str, DKGNode],
+ 165:     edges: Dict[str, DKGEdge],
+ 166:     clock_nets: set[str],
+ 167:     reset_nets: set[str],
+ 168: ) -> None:
+ 169:     for e in edges.values():
+ 170:         if e.signal_name in clock_nets:
+ 171:             e.flow_type = EdgeFlowType.CLOCK_TREE
+ 172:             continue
+ 173:         if e.signal_name in reset_nets:
+ 174:             e.flow_type = EdgeFlowType.ASYNC_RESET
+ 175:             continue
+ 176: 
+ 177:         src = nodes[e.src_node]
+ 178:         dst = nodes[e.dst_node]
+ 179: 
+ 180:         if src.entity_class == EntityClass.FLIP_FLOP:
+ 181:             e.flow_type = EdgeFlowType.SEQ_LAUNCH
+ 182:         elif dst.entity_class == EntityClass.FLIP_FLOP:
+ 183:             e.flow_type = EdgeFlowType.SEQ_CAPTURE
+ 184:         else:
+ 185:             e.flow_type = EdgeFlowType.COMBINATIONAL
+ 186: 
+ 187: 
+ 188: def assign_clock_domains(
+ 189:     nodes: Dict[str, DKGNode],
+ 190:     edges: Dict[str, DKGEdge],
+ 191:     clock_nets: set[str],
+ 192: ) -> None:
+ 193:     for n in nodes.values():
+ 194:         if n.entity_class != EntityClass.FLIP_FLOP:
+ 195:             continue
+ 196:         for eid in n.in_edges:
+ 197:             e = edges[eid]
+ 198:             if e.signal_name in clock_nets:
+ 199:                 n.clock_domain = e.signal_name
+ 200:                 break
+ 201: 
+ 202: 
+ 203: def merge_bit_edges_to_bus(edges: Dict[str, DKGEdge]) -> Dict[str, DKGEdge]:
+ 204:     groups: Dict[Tuple[str, str, RelationType, EdgeFlowType, str], List[Tuple[Optional[int], DKGEdge]]] = defaultdict(list)
+ 205: 
+ 206:     for e in edges.values():
+ 207:         base, bit = split_signal_bit(e.signal_name)
+ 208:         key = (e.src_node, e.dst_node, e.relation_type, e.flow_type, base)
+ 209:         groups[key].append((bit, e))
+ 210: 
+ 211:     new_edges: Dict[str, DKGEdge] = {}
+ 212:     new_eid = 0
+ 213: 
+ 214:     for key, items in groups.items():
+ 215:         _, _, _, _, base = key
+ 216: 
+ 217:         if all(bit is None for bit, _ in items):
+ 218:             for _, e in items:
+ 219:                 new_edges[e.edge_id] = e
+ 220:             continue
+ 221: 
+ 222:         items.sort(key=lambda x: (-1 if x[0] is None else x[0]))
+ 223: 
+ 224:         current_bucket: List[Tuple[Optional[int], DKGEdge]] = []
+ 225:         prev_bit: Optional[int] = None
+ 226: 
+ 227:         def flush_bucket(bucket: List[Tuple[Optional[int], DKGEdge]]) -> None:
+ 228:             nonlocal new_eid
+ 229:             if not bucket:
+ 230:                 return
+ 231: 
+ 232:             bits = [b for b, _ in bucket if b is not None]
+ 233:             edges_in_bucket = [e for _, e in bucket]
+ 234: 
+ 235:             if len(bits) <= 1:
+ 236:                 e = edges_in_bucket[0]
+ 237:                 new_edges[e.edge_id] = e
+ 238:                 return
+ 239: 
+ 240:             msb = max(bits)
+ 241:             lsb = min(bits)
+ 242:             base_edge = edges_in_bucket[0]
+ 243:             merged = DKGEdge(
+ 244:                 edge_id=f"bus_e{new_eid}",
+ 245:                 src_node=base_edge.src_node,
+ 246:                 dst_node=base_edge.dst_node,
+ 247:                 relation_type=base_edge.relation_type,
+ 248:                 flow_type=base_edge.flow_type,
+ 249:                 signal_name=f"{base}[{msb}:{lsb}]",
+ 250:                 canonical_name=base_edge.canonical_name,
+ 251:                 bit_range=(msb, lsb),
+ 252:                 net_id=base_edge.net_id,
+ 253:                 driver_type=base_edge.driver_type,
+ 254:                 fanout_count=base_edge.fanout_count,
+ 255:                 clock_signal=base_edge.clock_signal,
+ 256:                 reset_signal=base_edge.reset_signal,
+ 257:                 clock_domain_id=base_edge.clock_domain_id,
+ 258:                 timing_exception=base_edge.timing_exception,
+ 259:                 delay=base_edge.delay,
+ 260:                 arrival_time=base_edge.arrival_time,
+ 261:                 required_time=base_edge.required_time,
+ 262:                 slack=base_edge.slack,
+ 263:                 attributes=dict(base_edge.attributes),
+ 264:                 provenances=[],
+ 265:                 primary_provenance=None,
+ 266:             )
+ 267: 
+ 268:             primary, provs = merge_provenances_edges(edges_in_bucket)
+ 269:             merged.provenances = provs
+ 270:             merged.primary_provenance = primary
+ 271:             merged.attributes["merged_bits"] = sorted(bits)
+ 272: 
+ 273:             new_edges[merged.edge_id] = merged
+ 274:             new_eid += 1
+ 275: 
+ 276:         for bit, e in items:
+ 277:             if bit is None:
+ 278:                 flush_bucket(current_bucket)
+ 279:                 current_bucket = []
+ 280:                 new_edges[e.edge_id] = e
+ 281:                 prev_bit = None
+ 282:                 continue
+ 283: 
+ 284:             if prev_bit is None or bit == prev_bit - 1:
+ 285:                 current_bucket.append((bit, e))
+ 286:             else:
+ 287:                 flush_bucket(current_bucket)
+ 288:                 current_bucket = [(bit, e)]
+ 289: 
+ 290:             prev_bit = bit
+ 291: 
+ 292:         flush_bucket(current_bucket)
+ 293: 
+ 294:     return new_edges
+ 295: 
+ 296: 
+ 297: def reindex_node_edges(nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge]) -> None:
+ 298:     for n in nodes.values():
+ 299:         n.in_edges = []
+ 300:         n.out_edges = []
+ 301: 
+ 302:     for e in edges.values():
+ 303:         nodes[e.src_node].out_edges.append(e.edge_id)
+ 304:         nodes[e.dst_node].in_edges.append(e.edge_id)
+ 305: 
+ 306: 
+ 307: def build_nodes_and_edges(
+ 308:     wires: Dict[int, Wire],
+ 309:     cells: List[CellIR],
+ 310: ) -> Tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
+ 311:     connect_wires_to_cells(wires, cells)
+ 312: 
+ 313:     nodes: Dict[str, DKGNode] = {}
+ 314:     for cell in cells:
+ 315:         node_id = make_node_id(cell)
+ 316:         node = DKGNode(
+ 317:             node_id=node_id,
+ 318:             entity_class=map_cell_type(cell.type),
+ 319:             hier_path=cell.module,
+ 320:             local_name=cell.name,
+ 321:         )
+ 322:         node.canonical_name = make_node_canonical_name(node)
+ 323: 
+ 324:         file, line = parse_src(cell.src)
+ 325:         prov = Provenance(
+ 326:             origin_file=file,
+ 327:             origin_line=line,
+ 328:             tool_stage="rtl",
+ 329:             confidence="exact",
+ 330:         )
+ 331:         add_provenance(node, prov, make_primary=True)
+ 332:         nodes[node_id] = node
+ 333: 
+ 334:     edges: Dict[str, DKGEdge] = {}
+ 335:     eid = 0
+ 336: 
+ 337:     for w in wires.values():
+ 338:         for src in w.drivers:
+ 339:             for dst in w.loads:
+ 340:                 edge_id = f"e{eid}"
+ 341:                 eid += 1
+ 342: 
+ 343:                 edge = DKGEdge(
+ 344:                     edge_id=edge_id,
+ 345:                     src_node=src,
+ 346:                     dst_node=dst,
+ 347:                     relation_type=RelationType.DATA,
+ 348:                     flow_type=EdgeFlowType.COMBINATIONAL,
+ 349:                     signal_name=w.name or f"wire_{w.wire_id}",
+ 350:                     canonical_name=f"{src}->{dst}",
+ 351:                 )
+ 352: 
+ 353:                 file, line = parse_src(w.src)
+ 354:                 prov = Provenance(
+ 355:                     origin_file=file,
+ 356:                     origin_line=line,
+ 357:                     tool_stage="rtl",
+ 358:                     confidence="exact",
+ 359:                 )
+ 360:                 add_provenance(edge, prov, make_primary=True)
+ 361: 
+ 362:                 edges[edge_id] = edge
+ 363: 
+ 364:     edges = merge_bit_edges_to_bus(edges)
+ 365: 
+ 366:     new_edges: Dict[str, DKGEdge] = {}
+ 367:     for e in edges.values():
+ 368:         new_id = make_edge_id(e)
+ 369:         e.edge_id = new_id
+ 370:         new_edges[new_id] = e
+ 371: 
+ 372:     edges = new_edges
+ 373:     reindex_node_edges(nodes, edges)
+ 374: 
+ 375:     clock_nets, reset_nets = detect_clock_reset_signals(nodes, edges)
+ 376:     assign_clock_domains(nodes, edges, clock_nets)
+ 377:     assign_edge_flow_types(nodes, edges, clock_nets, reset_nets)
+ 378: 
+ 379:     return nodes, edges
+
+
+================================================================================
+FILE: dkg\ir.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from dataclasses import dataclass, field
+   4: from typing import Optional
+   5: 
+   6: 
+   7: @dataclass
+   8: class Wire:
+   9:     wire_id: int
+  10:     name: str | None = None
+  11:     drivers: list[str] = field(default_factory=list)
+  12:     loads: list[str] = field(default_factory=list)
+  13:     src: Optional[str] = None
+  14: 
+  15: 
+  16: @dataclass
+  17: class CellIR:
+  18:     name: str
+  19:     type: str
+  20:     module: str
+  21:     port_dirs: dict[str, str]
+  22:     connections: dict[str, list[int]]
+  23:     src: Optional[str] = None
+
+
+================================================================================
+FILE: dkg\provenance.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from dataclasses import dataclass
+   4: from typing import Iterable, Optional, Tuple, List
+   5: 
+   6: 
+   7: @dataclass
+   8: class Provenance:
+   9:     origin_file: Optional[str] = None
+  10:     origin_line: Optional[int] = None
+  11:     tool_stage: str = "rtl"  # rtl / synth / timing / constraint
+  12:     confidence: str = "exact"  # exact / inferred
+  13: 
+  14: 
+  15: def add_provenance(obj, prov: Provenance, make_primary: bool = False) -> None:
+  16:     obj.provenances.append(prov)
+  17:     if make_primary or obj.primary_provenance is None:
+  18:         obj.primary_provenance = prov
+  19: 
+  20: 
+  21: def merge_provenances_nodes(nodes: Iterable) -> Tuple[Provenance, List[Provenance]]:
+  22:     new_provs: List[Provenance] = []
+  23:     for n in nodes:
+  24:         new_provs.extend(n.provenances)
+  25: 
+  26:     files = [p.origin_file for p in new_provs if p.origin_file]
+  27:     lines = [p.origin_line for p in new_provs if p.origin_line]
+  28: 
+  29:     primary = Provenance(
+  30:         origin_file=files[0] if files else None,
+  31:         origin_line=min(lines) if lines else None,
+  32:         tool_stage="rtl",
+  33:         confidence="inferred",
+  34:     )
+  35: 
+  36:     return primary, new_provs
+  37: 
+  38: 
+  39: def merge_provenances_edges(edges: Iterable) -> Tuple[Provenance, List[Provenance]]:
+  40:     new_provs: List[Provenance] = []
+  41:     for e in edges:
+  42:         new_provs.extend(e.provenances)
+  43: 
+  44:     files = [p.origin_file for p in new_provs if p.origin_file]
+  45:     lines = [p.origin_line for p in new_provs if p.origin_line]
+  46: 
+  47:     primary = Provenance(
+  48:         origin_file=files[0] if files else None,
+  49:         origin_line=min(lines) if lines else None,
+  50:         tool_stage="rtl",
+  51:         confidence="inferred",
+  52:     )
+  53: 
+  54:     return primary, new_provs
+
+
+================================================================================
+FILE: dkg\supergraph.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from dataclasses import dataclass, field
+   4: from enum import Enum
+   5: from typing import Any, Dict, List, Optional, Set, Tuple
+   6: 
+   7: from .graph import DKGEdge, DKGNode, EdgeFlowType, EntityClass, RelationType
+   8: from .provenance import Provenance
+   9: from .utils import stable_hash
+  10: 
+  11: 
+  12: class GraphViewType(str, Enum):
+  13:     Structural = "Structural"
+  14:     Timing = "Timing"
+  15:     Connectivity = "Connectivity"
+  16:     Physical = "Physical"
+  17: 
+  18: 
+  19: class SuperClass(str, Enum):
+  20:     ATOMIC = "Atomic"
+  21:     MODULE_CLUSTER = "ModuleCluster"
+  22:     SEQ_CHAIN = "SequentialChain"
+  23:     COMB_CLOUD = "CombinationalCloud"
+  24:     IO_CLUSTER = "IOCluster"
+  25:     CONSTRAINT_GROUP = "ConstraintGroup"
+  26:     CRITICAL_REGION = "CriticalRegion"
+  27:     SLACK_REGION = "SlackRegion"
+  28:     ELIMINATED = "EliminatedNode"
+  29: 
+  30: 
+  31: class NodeAction(Enum):
+  32:     PROMOTE = "promote"
+  33:     MERGE = "merge"
+  34:     ELIMINATE = "eliminate"
+  35: 
+  36: 
+  37: @dataclass
+  38: class SuperNode:
+  39:     node_id: str
+  40:     super_class: SuperClass
+  41:     member_nodes: Set[str]
+  42:     member_edges: Set[str]
+  43:     aggregated_attrs: Dict[str, Any] = field(default_factory=dict)
+  44:     provenances: List[Provenance] = field(default_factory=list)
+  45:     canonical_name: Optional[str] = None
+  46:     display_name: Optional[str] = None
+  47: 
+  48: 
+  49: @dataclass
+  50: class SuperEdge:
+  51:     edge_id: str
+  52:     src_node: str
+  53:     dst_node: str
+  54:     member_edges: Set[str]
+  55:     member_nodes: Set[str]
+  56:     relation_types: Set[RelationType]
+  57:     flow_types: Set[EdgeFlowType]
+  58:     provenances: List[Provenance] = field(default_factory=list)
+  59:     canonical_name: Optional[str] = None
+  60:     display_name: Optional[str] = None
+  61: 
+  62: 
+  63: @dataclass
+  64: class SuperGraph:
+  65:     super_nodes: Dict[str, SuperNode]
+  66:     super_edges: Dict[Tuple[str, str], SuperEdge]
+  67:     node_to_super: Dict[str, str]
+  68: 
+  69: 
+  70: def make_supernode_canonical_name(sn: SuperNode, nodes: Dict[str, DKGNode]) -> str:
+  71:     any_node = nodes[next(iter(sn.member_nodes))]
+  72:     base = any_node.hier_path
+  73:     return f"{base} : {sn.super_class.value}"
+  74: 
+  75: 
+  76: def make_supernode_display_name(sn: SuperNode) -> str:
+  77:     if sn.super_class == SuperClass.COMB_CLOUD:
+  78:         return "Combinational Logic"
+  79:     if sn.super_class == SuperClass.SEQ_CHAIN:
+  80:         return "Sequential Chain"
+  81:     if sn.super_class == SuperClass.ATOMIC:
+  82:         return "Block"
+  83:     if sn.super_class == SuperClass.ELIMINATED:
+  84:         return "Collapsed"
+  85:     return sn.super_class.value
+  86: 
+  87: 
+  88: def make_superedge_canonical_name(se: SuperEdge, super_nodes: Dict[str, SuperNode]) -> str:
+  89:     src = super_nodes[se.src_node].canonical_name
+  90:     dst = super_nodes[se.dst_node].canonical_name
+  91:     return f"{src} -> {dst}"
+  92: 
+  93: 
+  94: def make_superedge_display_name(se: SuperEdge) -> str:
+  95:     if len(se.relation_types) == 1:
+  96:         return next(iter(se.relation_types)).value.replace("Relation", "")
+  97:     return "Multiple Signals"
+  98: 
+  99: 
+ 100: def supernode_signature(
+ 101:     view: GraphViewType,
+ 102:     super_class: SuperClass,
+ 103:     member_node_ids: set[str],
+ 104:     policy_version: str = "v1",
+ 105: ) -> str:
+ 106:     nodes_part = ",".join(sorted(member_node_ids))
+ 107:     return "|".join([view.value, super_class.value, policy_version, nodes_part])
+ 108: 
+ 109: 
+ 110: def make_supernode_id(
+ 111:     view: GraphViewType,
+ 112:     super_class: SuperClass,
+ 113:     member_node_ids: set[str],
+ 114:     policy_version: str = "v1",
+ 115: ) -> str:
+ 116:     sig = supernode_signature(view, super_class, member_node_ids, policy_version)
+ 117:     h = stable_hash(sig)
+ 118:     return f"SN_{view.value}_{super_class.value}_{h}"
+ 119: 
+ 120: 
+ 121: def superedge_signature(
+ 122:     src_sn: str,
+ 123:     dst_sn: str,
+ 124:     member_edge_ids: set[str],
+ 125:     policy_version: str = "v1",
+ 126: ) -> str:
+ 127:     edges_part = ",".join(sorted(member_edge_ids))
+ 128:     return "|".join([src_sn, dst_sn, policy_version, edges_part])
+ 129: 
+ 130: 
+ 131: def make_superedge_id(
+ 132:     src_sn: str,
+ 133:     dst_sn: str,
+ 134:     member_edge_ids: set[str],
+ 135:     policy_version: str = "v1",
+ 136: ) -> str:
+ 137:     sig = superedge_signature(src_sn, dst_sn, member_edge_ids, policy_version)
+ 138:     h = stable_hash(sig)
+ 139:     return f"SE_{h}"
+ 140: 
+ 141: 
+ 142: VIEW_POLICY: Dict[GraphViewType, Dict[EntityClass, NodeAction]] = {
+ 143:     GraphViewType.Structural: {
+ 144:         EntityClass.MODULE_INSTANCE: NodeAction.PROMOTE,
+ 145:         EntityClass.FLIP_FLOP: NodeAction.MERGE,
+ 146:         EntityClass.LUT: NodeAction.MERGE,
+ 147:         EntityClass.MUX: NodeAction.MERGE,
+ 148:         EntityClass.DSP: NodeAction.MERGE,
+ 149:         EntityClass.BRAM: NodeAction.MERGE,
+ 150:         EntityClass.IO_PORT: NodeAction.PROMOTE,
+ 151:         EntityClass.PACKAGE_PIN: NodeAction.ELIMINATE,
+ 152:         EntityClass.PBLOCK: NodeAction.ELIMINATE,
+ 153:     },
+ 154:     GraphViewType.Connectivity: {
+ 155:         EntityClass.FLIP_FLOP: NodeAction.PROMOTE,
+ 156:         EntityClass.DSP: NodeAction.PROMOTE,
+ 157:         EntityClass.BRAM: NodeAction.PROMOTE,
+ 158:         EntityClass.LUT: NodeAction.MERGE,
+ 159:         EntityClass.MUX: NodeAction.MERGE,
+ 160:         EntityClass.MODULE_INSTANCE: NodeAction.ELIMINATE,
+ 161:     },
+ 162: }
+ 163: 
+ 164: 
+ 165: class ViewBuilder:
+ 166:     def __init__(self, nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge], view: GraphViewType):
+ 167:         self.nodes = nodes
+ 168:         self.edges = edges
+ 169:         self.view = view
+ 170: 
+ 171:         self.node_to_super: Dict[str, str] = {}
+ 172:         self.super_nodes: Dict[str, SuperNode] = {}
+ 173:         self.super_edges: Dict[Tuple[str, str], SuperEdge] = {}
+ 174: 
+ 175:     def _neighbors_1hop(self, nid: str) -> Set[str]:
+ 176:         n = self.nodes[nid]
+ 177:         nbrs = set()
+ 178:         for eid in n.in_edges + n.out_edges:
+ 179:             e = self.edges[eid]
+ 180:             nbrs.add(e.src_node)
+ 181:             nbrs.add(e.dst_node)
+ 182:         return nbrs
+ 183: 
+ 184:     def cycle1_promote(self) -> None:
+ 185:         for n in self.nodes.values():
+ 186:             if VIEW_POLICY[self.view].get(n.entity_class) != NodeAction.PROMOTE:
+ 187:                 continue
+ 188: 
+ 189:             sn = SuperNode(
+ 190:                 node_id=f"SN_{n.node_id}",
+ 191:                 super_class=SuperClass.ATOMIC,
+ 192:                 member_nodes={n.node_id},
+ 193:                 member_edges=set(),
+ 194:                 provenances=list(n.provenances),
+ 195:             )
+ 196:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+ 197:             sn.display_name = make_supernode_display_name(sn)
+ 198:             self.super_nodes[sn.node_id] = sn
+ 199:             self.node_to_super[n.node_id] = sn.node_id
+ 200: 
+ 201:     def cycle2_merge(self) -> None:
+ 202:         merge_candidates = {
+ 203:             nid
+ 204:             for nid, n in self.nodes.items()
+ 205:             if VIEW_POLICY[self.view].get(n.entity_class) == NodeAction.MERGE
+ 206:         }
+ 207: 
+ 208:         visited: Set[str] = set()
+ 209: 
+ 210:         for nid in merge_candidates:
+ 211:             if nid in visited:
+ 212:                 continue
+ 213: 
+ 214:             stack = [nid]
+ 215:             component: Set[str] = set()
+ 216: 
+ 217:             while stack:
+ 218:                 cur = stack.pop()
+ 219:                 if cur in visited or cur not in merge_candidates:
+ 220:                     continue
+ 221: 
+ 222:                 visited.add(cur)
+ 223:                 component.add(cur)
+ 224: 
+ 225:                 for nb in self._neighbors_1hop(cur):
+ 226:                     stack.append(nb)
+ 227: 
+ 228:             if not component:
+ 229:                 continue
+ 230: 
+ 231:             sn_id = make_supernode_id(
+ 232:                 view=self.view,
+ 233:                 super_class=SuperClass.COMB_CLOUD,
+ 234:                 member_node_ids=component,
+ 235:                 policy_version="v1",
+ 236:             )
+ 237: 
+ 238:             sn = SuperNode(
+ 239:                 node_id=sn_id,
+ 240:                 super_class=SuperClass.COMB_CLOUD,
+ 241:                 member_nodes=component,
+ 242:                 member_edges=set(),
+ 243:             )
+ 244:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+ 245:             sn.display_name = make_supernode_display_name(sn)
+ 246: 
+ 247:             self.super_nodes[sn.node_id] = sn
+ 248:             for n in component:
+ 249:                 self.node_to_super[n] = sn.node_id
+ 250: 
+ 251:     def cycle2_5_eliminate(self) -> None:
+ 252:         for nid, n in self.nodes.items():
+ 253:             if nid in self.node_to_super:
+ 254:                 continue
+ 255: 
+ 256:             if VIEW_POLICY[self.view].get(n.entity_class) != NodeAction.ELIMINATE:
+ 257:                 raise RuntimeError(f"Unassigned node in view {self.view}: {nid}")
+ 258: 
+ 259:             sn = SuperNode(
+ 260:                 node_id=make_supernode_id(
+ 261:                     view=self.view,
+ 262:                     super_class=SuperClass.ELIMINATED,
+ 263:                     member_node_ids={nid},
+ 264:                     policy_version="v1",
+ 265:                 ),
+ 266:                 super_class=SuperClass.ELIMINATED,
+ 267:                 member_nodes={nid},
+ 268:                 member_edges=set(),
+ 269:             )
+ 270:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+ 271:             sn.display_name = make_supernode_display_name(sn)
+ 272: 
+ 273:             self.super_nodes[sn.node_id] = sn
+ 274:             self.node_to_super[nid] = sn.node_id
+ 275: 
+ 276:     def cycle3_rewrite_edges(self) -> None:
+ 277:         for e in self.edges.values():
+ 278:             src_sn = self.node_to_super[e.src_node]
+ 279:             dst_sn = self.node_to_super[e.dst_node]
+ 280: 
+ 281:             if src_sn == dst_sn:
+ 282:                 self.super_nodes[src_sn].member_edges.add(e.edge_id)
+ 283:                 continue
+ 284: 
+ 285:             key = (src_sn, dst_sn)
+ 286:             if key not in self.super_edges:
+ 287:                 self.super_edges[key] = SuperEdge(
+ 288:                     edge_id=make_superedge_id(src_sn, dst_sn, set()),
+ 289:                     src_node=src_sn,
+ 290:                     dst_node=dst_sn,
+ 291:                     member_edges=set(),
+ 292:                     member_nodes=set(),
+ 293:                     relation_types=set(),
+ 294:                     flow_types=set(),
+ 295:                     provenances=[],
+ 296:                 )
+ 297:                 self.super_edges[key].canonical_name = make_superedge_canonical_name(
+ 298:                     self.super_edges[key],
+ 299:                     self.super_nodes,
+ 300:                 )
+ 301:                 self.super_edges[key].display_name = make_superedge_display_name(
+ 302:                     self.super_edges[key],
+ 303:                 )
+ 304: 
+ 305:             se = self.super_edges[key]
+ 306:             se.member_edges.add(e.edge_id)
+ 307:             se.member_nodes.update({e.src_node, e.dst_node})
+ 308:             se.relation_types.add(e.relation_type)
+ 309:             se.flow_types.add(e.flow_type)
+ 310:             se.provenances.extend(e.provenances)
+ 311: 
+ 312:     def build(self) -> SuperGraph:
+ 313:         self.cycle1_promote()
+ 314:         self.cycle2_merge()
+ 315:         self.cycle2_5_eliminate()
+ 316:         self.cycle3_rewrite_edges()
+ 317: 
+ 318:         return SuperGraph(
+ 319:             super_nodes=self.super_nodes,
+ 320:             super_edges=self.super_edges,
+ 321:             node_to_super=self.node_to_super,
+ 322:         )
+
+
+================================================================================
+FILE: dkg\utils.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: import hashlib
+   4: import re
+   5: from pathlib import Path
+   6: from typing import Optional, Tuple
+   7: 
+   8: 
+   9: def is_clock_name(name: str) -> bool:
+  10:     n = name.lower()
+  11:     return n == "clk" or n.startswith("clk") or n.endswith("_clk") or "clock" in n
+  12: 
+  13: 
+  14: def is_reset_name(name: str) -> bool:
+  15:     n = name.lower()
+  16:     return n == "rst" or n.startswith("rst") or n.startswith("reset")
+  17: 
+  18: 
+  19: def is_active_low(name: str) -> bool:
+  20:     return name.lower().endswith("_n")
+  21: 
+  22: 
+  23: def is_ff_cell(cell_type: str) -> bool:
+  24:     return cell_type in {"$dff", "$adff", "$sdff", "$dffe", "$sdffe"}
+  25: 
+  26: 
+  27: def is_async_reset_ff(cell_type: str) -> bool:
+  28:     return cell_type == "$adff"
+  29: 
+  30: 
+  31: def is_sync_reset_ff(cell_type: str) -> bool:
+  32:     return cell_type == "$sdff"
+  33: 
+  34: 
+  35: def win_to_wsl_path(win_path: str) -> str:
+  36:     p = Path(win_path).resolve()
+  37:     drive = p.drive[0].lower()
+  38:     path_no_drive = p.as_posix()[2:]
+  39:     return f"/mnt/{drive}{path_no_drive}"
+  40: 
+  41: 
+  42: def parse_src(src_str: Optional[str]) -> Tuple[Optional[str], Optional[int]]:
+  43:     if not src_str:
+  44:         return None, None
+  45:     try:
+  46:         file_part, line_part = src_str.split(":")
+  47:         line = int(line_part.split(".")[0])
+  48:         return file_part, line
+  49:     except Exception:
+  50:         return None, None
+  51: 
+  52: 
+  53: def split_signal_bit(sig: str) -> Tuple[str, Optional[int]]:
+  54:     m = re.match(r"(.+)\[(\d+)\]$", sig)
+  55:     if m:
+  56:         return m.group(1), int(m.group(2))
+  57:     return sig, None
+  58: 
+  59: 
+  60: def stable_hash(s: str, length: int = 12) -> str:
+  61:     return hashlib.sha1(s.encode()).hexdigest()[:length]
+
+
+================================================================================
+FILE: dkg\yosys_parser.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: import glob
+   4: import json
+   5: import os
+   6: import subprocess
+   7: from pathlib import Path
+   8: from typing import List
+   9: 
+  10: from .config import YosysConfig
+  11: from .utils import win_to_wsl_path
+  12: 
+  13: 
+  14: def collect_hdl_files(src_dir_win: str) -> List[str]:
+  15:     verilog_files = glob.glob(os.path.join(src_dir_win, "*.v"))
+  16:     sv_files = glob.glob(os.path.join(src_dir_win, "*.sv"))
+  17:     return verilog_files + sv_files
+  18: 
+  19: 
+  20: def build_yosys_script(files_wsl: List[str], top_module: str, out_json_wsl: str) -> str:
+  21:     return "\n".join(
+  22:         [
+  23:             f"read_verilog -sv {' '.join(files_wsl)};",
+  24:             f"hierarchy -check -top {top_module};",
+  25:             "proc;",
+  26:             "opt;",
+  27:             f"write_json {out_json_wsl}",
+  28:         ]
+  29:     )
+  30: 
+  31: 
+  32: def run_yosys(files_win: List[str], config: YosysConfig) -> None:
+  33:     if not files_win:
+  34:         raise RuntimeError("No HDL files found.")
+  35: 
+  36:     files_wsl = [win_to_wsl_path(f) for f in files_win]
+  37:     out_json_wsl = win_to_wsl_path(config.out_json_win)
+  38:     yosys_script = build_yosys_script(files_wsl, config.top_module, out_json_wsl)
+  39: 
+  40:     subprocess.run(["wsl", "yosys", "-p", yosys_script], check=True)
+  41: 
+  42: 
+  43: def load_yosys_json(out_json_win: str) -> dict:
+  44:     with open(out_json_win, "r", encoding="utf-8") as f:
+  45:         return json.load(f)
+  46: 
+  47: 
+  48: def parse_yosys(config: YosysConfig) -> dict:
+  49:     files_win = collect_hdl_files(config.src_dir_win)
+  50:     run_yosys(files_win, config)
+  51:     return load_yosys_json(config.out_json_win)
+
+
