@@ -48,14 +48,14 @@ class EdgeFlowType(str, Enum):
 
 @dataclass
 class DKGNode:
-    # 핵심 식별자 (영구적, 안정적)
     node_id: str
     entity_class: EntityClass
     hier_path: str
     local_name: str
     canonical_name: Optional[str] = None
 
-    # 메타데이터
+    short_alias: Optional[str] = None
+
     parameters: Dict[str, str] = field(default_factory=dict)
     attributes: Dict[str, str] = field(default_factory=dict)
 
@@ -128,45 +128,21 @@ def make_node_canonical_name(node: DKGNode) -> str:
     return f"{base}.{suffix}"
 
 
-def make_node_display_name(node: DKGNode, lang: str = "en") -> str:
-    """
-    노드의 디스플레이 이름 생성 (UI용).
-    
-    Args:
-        node: DKGNode 인스턴스
-        lang: 언어 ('en', 'ko' 등)
-    
-    Returns:
-        사람이 읽기 좋은 이름
-    
-    Note:
-        DKG 데이터 모델 자체에 저장되지 않음.
-        필요할 때만 on-demand로 생성 (presentation layer 책임).
-    """
-    display_map = {
-        'en': {
-            EntityClass.FLIP_FLOP: f"Reg {node.local_name}",
-            EntityClass.BRAM: "BRAM",
-            EntityClass.MUX: "MUX",
-            EntityClass.LUT: "Logic",
-            EntityClass.DSP: "DSP",
-            EntityClass.IO_PORT: f"Port {node.local_name}",
-        },
-        'ko': {
-            EntityClass.FLIP_FLOP: f"레지스터 {node.local_name}",
-            EntityClass.BRAM: "메모리",
-            EntityClass.MUX: "멀티플렉서",
-            EntityClass.LUT: "조합논리",
-            EntityClass.DSP: "디지털신호처리",
-            EntityClass.IO_PORT: f"포트 {node.local_name}",
-        },
-    }
-    
-    lang_map = display_map.get(lang, display_map['en'])
-    return lang_map.get(
-        node.entity_class,
-        node.local_name or node.entity_class.value
-    )
+def make_node_display_name(node: DKGNode) -> str:
+    if node.entity_class == EntityClass.FLIP_FLOP:
+        return f"Reg {node.local_name}"
+    if node.entity_class == EntityClass.BRAM:
+        return "BRAM"
+    if node.entity_class == EntityClass.MUX:
+        return "MUX"
+    if node.entity_class == EntityClass.LUT:
+        return "Logic"
+    if node.entity_class == EntityClass.DSP:
+        return "DSP"
+    if node.entity_class == EntityClass.IO_PORT:
+        return f"Port {node.local_name}"
+
+    return node.local_name or node.entity_class.value
 
 
 def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:

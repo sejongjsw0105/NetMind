@@ -18,9 +18,9 @@ def collect_py_files(output_txt: str = "result.txt"):
         for py_file in py_files:
             relative_path = py_file.relative_to(base_path)
 
-            out.write("=" * 80 + "\n")
+            out.write("\n")
             out.write(f"FILE: {relative_path}\n")
-            out.write("=" * 80 + "\n")
+            out.write("\n")
 
             try:
                 with open(py_file, "r", encoding="utf-8") as f:

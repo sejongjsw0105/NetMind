@@ -7,10 +7,16 @@ from .config import YosysConfig
 from .graph import DKGEdge, DKGNode
 from .graph_build import build_nodes_and_edges, build_wires_and_cells
 from .graph_updater import GraphUpdater
+from .graphcache import GraphSnapshot, GraphVersion, load_snapshot, save_snapshot
 from .parsers import ConstraintParser
 from .parsers.sdc_parser import SdcParser
+from .parsers.tcl_parser import TclParser
+from .parsers.timing_report_parser import TimingReportParser
 from .parsers.xdc_parser import XdcParser
+from .parsers.bd_parser import BdParser
 from .stages import FieldSource, ParsingStage
+from .supergraph import SuperGraph
+from .utils import compute_file_hash
 from .yosys_parser import parse_yosys
 
 
@@ -41,9 +47,15 @@ class DKGPipeline:
         self.nodes: Optional[Dict[str, DKGNode]] = None
         self.edges: Optional[Dict[str, DKGEdge]] = None
         self.updater: Optional[GraphUpdater] = None
+        self.supergraph: Optional[SuperGraph] = None
         
         self.current_stage = None
         self.completed_stages: List[ParsingStage] = []
+        
+        # 입력 파일 추적 (버전 계산용)
+        self.rtl_files: List[str] = []
+        self.constraint_files: List[str] = []
+        self.timing_files: List[str] = []
         
         # 파서 레지스트리
         self.parsers: Dict[str, ConstraintParser] = {
@@ -57,6 +69,10 @@ class DKGPipeline:
         yosys = parse_yosys(self.yosys_config)
         wires, cells = build_wires_and_cells(yosys)
         self.nodes, self.edges = build_nodes_and_edges(wires, cells)
+        
+        # RTL 파일 추적
+        if self.yosys_config.out_json_win:
+            self.rtl_files.append(self.yosys_config.out_json_win)
         
         self.updater = GraphUpdater(self.nodes, self.edges)
         self.current_stage = ParsingStage.RTL
@@ -79,18 +95,58 @@ class DKGPipeline:
         parser = self.parsers[ext]
         parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
         
+        # 제약 파일 추적
+        self.constraint_files.append(filepath)
+        
         if ParsingStage.CONSTRAINTS not in self.completed_stages:
             self.completed_stages.append(ParsingStage.CONSTRAINTS)
     
     def add_timing_report(self, filepath: str) -> None:
         """Stage 3: 타이밍 리포트 추가"""
-        # TODO: 타이밍 리포트 파서 구현
-        pass
+        if self.updater is None or self.nodes is None or self.edges is None:
+            raise RuntimeError("RTL stage must be run first")
+        
+        # 타이밍 리포트 파싱
+        parser = TimingReportParser()
+        paths = parser.parse_file(filepath)
+        
+        # 그래프에 반영
+        parser.apply_to_graph(self.nodes, self.edges, self.updater)
+        
+        # 파일 추적
+        self.timing_files.append(filepath)
+        
+        if ParsingStage.TIMING not in self.completed_stages:
+            self.completed_stages.append(ParsingStage.TIMING)
+        
+        # 요약 출력
+        summary = parser.get_summary()
+        print(f"✅ 타이밍 리포트 파싱 완료: {filepath}")
+        print(f"   - 경로 수: {summary['total_paths']}")
+        if summary.get('worst_slack') is not None:
+            print(f"   - 최악 slack: {summary['worst_slack']:.2f} ns")
     
     def add_floorplan(self, filepath: str) -> None:
         """Stage 4: Floorplan TCL 추가"""
-        # TODO: TCL 파서 구현
-        pass
+        if self.updater is None or self.nodes is None or self.edges is None:
+            raise RuntimeError("RTL stage must be run first")
+
+        parser = TclParser()
+        parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
+
+        if ParsingStage.FLOORPLAN not in self.completed_stages:
+            self.completed_stages.append(ParsingStage.FLOORPLAN)
+
+    def add_board(self, filepath: str) -> None:
+        """Stage 5: BD/board constraints 추가"""
+        if self.updater is None or self.nodes is None or self.edges is None:
+            raise RuntimeError("RTL stage must be run first")
+
+        parser = BdParser()
+        parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
+
+        if ParsingStage.BOARD not in self.completed_stages:
+            self.completed_stages.append(ParsingStage.BOARD)
     
     def get_graph(self) -> tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
         """최종 그래프 반환"""
@@ -133,3 +189,69 @@ class DKGPipeline:
                     FieldSource.INFERRED,
                     ParsingStage.RTL,
                 )
+    
+    def compute_version(self) -> GraphVersion:
+        """현재 상태의 GraphVersion 계산"""
+        import hashlib
+        
+        # RTL 해시 (모든 RTL 파일의 조합)
+        rtl_hash = ""
+        if self.rtl_files:
+            combined = "".join(compute_file_hash(f) for f in self.rtl_files)
+            rtl_hash = hashlib.sha256(combined.encode()).hexdigest()[:16]
+        
+        # Constraint 해시
+        constraint_hash = None
+        if self.constraint_files:
+            combined = "".join(compute_file_hash(f) for f in self.constraint_files)
+            constraint_hash = hashlib.sha256(combined.encode()).hexdigest()[:16]
+        
+        # Timing 해시
+        timing_hash = None
+        if self.timing_files:
+            combined = "".join(compute_file_hash(f) for f in self.timing_files)
+            timing_hash = hashlib.sha256(combined.encode()).hexdigest()[:16]
+        
+        # 정책 버전 (향후 확장)
+        policy_versions = {}
+        
+        return GraphVersion(
+            rtl_hash=rtl_hash,
+            constraint_hash=constraint_hash,
+            timing_hash=timing_hash,
+            policy_versions=policy_versions,
+        )
+    
+    def save_cache(self, filepath: str | Path, indent: Optional[int] = None) -> None:
+        """현재 그래프를 캐시 파일로 저장"""
+        if self.nodes is None or self.edges is None:
+            raise RuntimeError("No graph available. Run RTL stage first.")
+        
+        version = self.compute_version()
+        snapshot = GraphSnapshot(
+            version=version,
+            dkg_nodes=self.nodes,
+            dkg_edges=self.edges,
+            supergraph=self.supergraph,
+        )
+        save_snapshot(snapshot, filepath, indent=indent)
+    
+    @classmethod
+    def load_from_cache(cls, filepath: str | Path, yosys_config: Optional[YosysConfig] = None) -> "DKGPipeline":
+        """캐시 파일에서 파이프라인 복원"""
+        snapshot = load_snapshot(filepath)
+        
+        # 더미 config (캐시 로딩 시에는 필요 없음)
+        if yosys_config is None:
+            yosys_config = YosysConfig(src_dir_win="", out_json_win="", top_module="")
+        
+        pipeline = cls(yosys_config)
+        pipeline.nodes = snapshot.dkg_nodes
+        pipeline.edges = snapshot.dkg_edges
+        pipeline.supergraph = snapshot.supergraph
+        
+        # 메타데이터는 재생성하지 않음 (읽기 전용 모드)
+        pipeline.updater = None
+        
+        return pipeline
+

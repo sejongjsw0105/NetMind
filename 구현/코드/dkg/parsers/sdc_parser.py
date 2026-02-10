@@ -7,6 +7,7 @@ from ..graph import DKGEdge, DKGNode
 from ..graph_updater import GraphUpdater
 from ..stages import FieldSource, ParsingStage
 from . import ConstraintParser
+from .parser_utils import extract_option_targets, match_any
 
 
 class SdcParser(ConstraintParser):
@@ -46,13 +47,13 @@ class SdcParser(ConstraintParser):
             # set_false_path 처리
             elif line.startswith("set_false_path"):
                 self._parse_false_path(
-                    line, line_num, filepath, updater, edges
+                    line, line_num, filepath, updater, nodes, edges
                 )
             
             # set_multicycle_path 처리
             elif line.startswith("set_multicycle_path"):
                 self._parse_multicycle_path(
-                    line, line_num, filepath, updater, edges
+                    line, line_num, filepath, updater, nodes, edges
                 )
     
     def _parse_create_clock(
@@ -114,20 +115,41 @@ class SdcParser(ConstraintParser):
         line_num: int,
         filepath: str,
         updater: GraphUpdater,
+        nodes: Dict[str, DKGNode],
         edges: Dict[str, DKGEdge],
     ) -> None:
         """
         set_false_path 명령 파싱.
         예: set_false_path -from [get_pins src/*] -to [get_pins dst/*]
         """
-        # 간단한 구현 (실제로는 -from/-to 파싱 필요)
-        # TODO: 실제 from/to 노드 매칭 로직 구현
-        
-        # 일단 placeholder
-        # affected_edges = find_edges_between(from_pattern, to_pattern)
-        # for edge_id in affected_edges:
-        #     updater.update_edge_field(...)
-        pass
+        from_patterns = extract_option_targets(line, "-from", ("ports", "pins", "cells"))
+        to_patterns = extract_option_targets(line, "-to", ("ports", "pins", "cells"))
+
+        if not from_patterns and not to_patterns:
+            return
+
+        for edge_id, edge in edges.items():
+            src_node = nodes.get(edge.src_node)
+            dst_node = nodes.get(edge.dst_node)
+            if not src_node or not dst_node:
+                continue
+
+            src_candidates = [src_node.local_name, src_node.hier_path, src_node.canonical_name]
+            dst_candidates = [dst_node.local_name, dst_node.hier_path, dst_node.canonical_name]
+
+            src_match = True if not from_patterns else match_any(from_patterns, src_candidates)
+            dst_match = True if not to_patterns else match_any(to_patterns, dst_candidates)
+
+            if src_match and dst_match:
+                updater.update_edge_field(
+                    edge_id,
+                    "timing_exception",
+                    "false_path",
+                    FieldSource.DECLARED,
+                    ParsingStage.CONSTRAINTS,
+                    filepath,
+                    line_num,
+                )
     
     def _parse_multicycle_path(
         self,
@@ -135,11 +157,58 @@ class SdcParser(ConstraintParser):
         line_num: int,
         filepath: str,
         updater: GraphUpdater,
+        nodes: Dict[str, DKGNode],
         edges: Dict[str, DKGEdge],
     ) -> None:
         """
         set_multicycle_path 명령 파싱.
         예: set_multicycle_path 2 -from [get_pins ...] -to [get_pins ...]
         """
-        # TODO: 구현
-        pass
+        value_match = re.search(r"set_multicycle_path\s+(-?\d+)", line)
+        if not value_match:
+            return
+
+        multicycle = int(value_match.group(1))
+        mc_type = None
+        if "-hold" in line:
+            mc_type = "hold"
+        elif "-setup" in line:
+            mc_type = "setup"
+
+        from_patterns = extract_option_targets(line, "-from", ("ports", "pins", "cells"))
+        to_patterns = extract_option_targets(line, "-to", ("ports", "pins", "cells"))
+
+        if not from_patterns and not to_patterns:
+            return
+
+        for edge_id, edge in edges.items():
+            src_node = nodes.get(edge.src_node)
+            dst_node = nodes.get(edge.dst_node)
+            if not src_node or not dst_node:
+                continue
+
+            src_candidates = [src_node.local_name, src_node.hier_path, src_node.canonical_name]
+            dst_candidates = [dst_node.local_name, dst_node.hier_path, dst_node.canonical_name]
+
+            src_match = True if not from_patterns else match_any(from_patterns, src_candidates)
+            dst_match = True if not to_patterns else match_any(to_patterns, dst_candidates)
+
+            if not (src_match and dst_match):
+                continue
+
+            new_params = dict(edge.parameters)
+            existing = new_params.get("multicycle")
+            if existing is None or multicycle > existing:
+                new_params["multicycle"] = multicycle
+            if mc_type:
+                new_params["multicycle_type"] = mc_type
+
+            updater.update_edge_field(
+                edge_id,
+                "parameters",
+                new_params,
+                FieldSource.DECLARED,
+                ParsingStage.CONSTRAINTS,
+                filepath,
+                line_num,
+            )

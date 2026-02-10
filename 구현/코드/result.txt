@@ -1,11 +1,31 @@
-================================================================================
+
 FILE: dkg\__init__.py
-================================================================================
 
 
-================================================================================
+
+
+FILE: dkg\graphcache\__init__.py
+
+   1: """
+   2: 그래프 캐싱 모듈
+   3: 
+   4: - graph_version: 그래프 버전 정보
+   5: - snapshot: 그래프 스냅샷 저장/로딩
+   6: """
+   7: from .graph_version import GraphVersion
+   8: from .snapshot import GraphSnapshot, load_snapshot, save_snapshot
+   9: 
+  10: __all__ = [
+  11:     "GraphVersion",
+  12:     "GraphSnapshot",
+  13:     "save_snapshot",
+  14:     "load_snapshot",
+  15: ]
+
+
+
 FILE: dkg\parsers\__init__.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from abc import ABC, abstractmethod
@@ -44,9 +64,9 @@ FILE: dkg\parsers\__init__.py
   36:         pass
 
 
-================================================================================
+
 FILE: main.py
-================================================================================
+
    1: from __future__ import annotations
    2: from dkg.config import YosysConfig
    3: from dkg.debug import (
@@ -84,9 +104,9 @@ FILE: main.py
   35:     main(DEFAULT_CONFIG, debug=True)
 
 
-================================================================================
+
 FILE: AICollector.py
-================================================================================
+
    1: from pathlib import Path
    2: 
    3: def collect_py_files(output_txt: str = "result.txt"):
@@ -107,9 +127,9 @@ FILE: AICollector.py
   18:         for py_file in py_files:
   19:             relative_path = py_file.relative_to(base_path)
   20: 
-  21:             out.write("=" * 80 + "\n")
+  21:             out.write("\n")
   22:             out.write(f"FILE: {relative_path}\n")
-  23:             out.write("=" * 80 + "\n")
+  23:             out.write("\n")
   24: 
   25:             try:
   26:                 with open(py_file, "r", encoding="utf-8") as f:
@@ -125,9 +145,113 @@ FILE: AICollector.py
   36:     collect_py_files()
 
 
-================================================================================
+
+FILE: cache_example.py
+
+   1: """
+   2: 그래프 캐싱 사용 예제
+   3: 
+   4: Usage:
+   5:     # 1. 그래프 구축 후 캐시 저장
+   6:     pipeline = DKGPipeline(yosys_config)
+   7:     pipeline.run_rtl_stage()
+   8:     pipeline.add_constraints("design.sdc")
+   9:     pipeline.save_cache("graph_cache.json")
+  10:     
+  11:     # 2. 캐시에서 로딩 (빠른 시작)
+  12:     pipeline = DKGPipeline.load_from_cache("graph_cache.json")
+  13:     nodes, edges = pipeline.get_graph()
+  14: """
+  15: from pathlib import Path
+  16: 
+  17: from dkg.config import YosysConfig
+  18: from dkg.pipeline import DKGPipeline
+  19: 
+  20: 
+  21: def save_example():
+  22:     """그래프 구축 후 캐시 저장"""
+  23:     # Yosys JSON 파일 경로 설정
+  24:     yosys_config = YosysConfig(
+  25:         src_dir_win=".",
+  26:         out_json_win="output.json",  # Yosys로 생성한 JSON 파일
+  27:         top_module="top",
+  28:     )
+  29:     
+  30:     # 파이프라인 실행
+  31:     pipeline = DKGPipeline(yosys_config)
+  32:     
+  33:     # Stage 1: RTL 파싱
+  34:     pipeline.run_rtl_stage()
+  35:     
+  36:     # Stage 2: Constraint 추가 (선택)
+  37:     # pipeline.add_constraints("design.sdc")
+  38:     # pipeline.add_constraints("design.xdc")
+  39:     
+  40:     # Stage 3: SuperGraph 생성 (선택)
+  41:     # from dkg.supergraph import build_supergraph
+  42:     # pipeline.supergraph = build_supergraph(pipeline.nodes, pipeline.edges)
+  43:     
+  44:     # 캐시 저장
+  45:     cache_path = Path("graph_cache.json")
+  46:     pipeline.save_cache(cache_path, indent=2)  # indent=2는 디버깅용, 생략하면 압축됨
+  47:     
+  48:     print(f"✅ 그래프 캐시 저장 완료: {cache_path}")
+  49:     if pipeline.nodes and pipeline.edges:
+  50:         print(f"   - 노드 수: {len(pipeline.nodes)}")
+  51:         print(f"   - 엣지 수: {len(pipeline.edges)}")
+  52:     
+  53:     # 버전 정보 확인
+  54:     version = pipeline.compute_version()
+  55:     print(f"   - RTL 해시: {version.rtl_hash}")
+  56:     if version.constraint_hash:
+  57:         print(f"   - Constraint 해시: {version.constraint_hash}")
+  58: 
+  59: 
+  60: def load_example():
+  61:     """캐시에서 그래프 로딩"""
+  62:     cache_path = Path("graph_cache.json")
+  63:     
+  64:     if not cache_path.exists():
+  65:         print(f"❌ 캐시 파일이 없습니다: {cache_path}")
+  66:         print("   save_example()을 먼저 실행하세요.")
+  67:         return
+  68:     
+  69:     # 캐시에서 로딩 (매우 빠름!)
+  70:     pipeline = DKGPipeline.load_from_cache(cache_path)
+  71:     
+  72:     print(f"✅ 그래프 캐시 로딩 완료: {cache_path}")
+  73:     if pipeline.nodes and pipeline.edges:
+  74:         print(f"   - 노드 수: {len(pipeline.nodes)}")
+  75:         print(f"   - 엣지 수: {len(pipeline.edges)}")
+  76:     
+  77:     # SuperGraph가 있으면 표시
+  78:     if pipeline.supergraph:
+  79:         print(f"   - SuperNode 수: {len(pipeline.supergraph.super_nodes)}")
+  80:         print(f"   - SuperEdge 수: {len(pipeline.supergraph.super_edges)}")
+  81:     
+  82:     # 그래프 사용
+  83:     nodes, edges = pipeline.get_graph()
+  84:     
+  85:     # 예: 첫 10개 노드 출력
+  86:     print("\n처음 10개 노드:")
+  87:     for i, (node_id, node) in enumerate(nodes.items()):
+  88:         if i >= 10:
+  89:             break
+  90:         print(f"  - {node.canonical_name or node_id}: {node.entity_class.value}")
+  91: 
+  92: 
+  93: if __name__ == "__main__":
+  94:     import sys
+  95:     
+  96:     if len(sys.argv) > 1 and sys.argv[1] == "load":
+  97:         load_example()
+  98:     else:
+  99:         save_example()
+
+
+
 FILE: dkg\config.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from dataclasses import dataclass
@@ -140,9 +264,9 @@ FILE: dkg\config.py
   10:     top_module: str
 
 
-================================================================================
+
 FILE: dkg\debug.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: import random
@@ -227,9 +351,9 @@ FILE: dkg\debug.py
   82:     plt.show()
 
 
-================================================================================
+
 FILE: dkg\graph.py
-================================================================================
+
    1: # NOTE:
    2: # canonical_name is a human-readable debug label.
    3: # It is intended for debugging, tracing, and debug-like queries only.
@@ -280,14 +404,14 @@ FILE: dkg\graph.py
   48: 
   49: @dataclass
   50: class DKGNode:
-  51:     # 핵심 식별자 (영구적, 안정적)
-  52:     node_id: str
-  53:     entity_class: EntityClass
-  54:     hier_path: str
-  55:     local_name: str
-  56:     canonical_name: Optional[str] = None
-  57: 
-  58:     # 메타데이터
+  51:     node_id: str
+  52:     entity_class: EntityClass
+  53:     hier_path: str
+  54:     local_name: str
+  55:     canonical_name: Optional[str] = None
+  56: 
+  57:     short_alias: Optional[str] = None
+  58: 
   59:     parameters: Dict[str, str] = field(default_factory=dict)
   60:     attributes: Dict[str, str] = field(default_factory=dict)
   61: 
@@ -360,70 +484,46 @@ FILE: dkg\graph.py
  128:     return f"{base}.{suffix}"
  129: 
  130: 
- 131: def make_node_display_name(node: DKGNode, lang: str = "en") -> str:
- 132:     """
- 133:     노드의 디스플레이 이름 생성 (UI용).
- 134:     
- 135:     Args:
- 136:         node: DKGNode 인스턴스
- 137:         lang: 언어 ('en', 'ko' 등)
- 138:     
- 139:     Returns:
- 140:         사람이 읽기 좋은 이름
- 141:     
- 142:     Note:
- 143:         DKG 데이터 모델 자체에 저장되지 않음.
- 144:         필요할 때만 on-demand로 생성 (presentation layer 책임).
- 145:     """
- 146:     display_map = {
- 147:         'en': {
- 148:             EntityClass.FLIP_FLOP: f"Reg {node.local_name}",
- 149:             EntityClass.BRAM: "BRAM",
- 150:             EntityClass.MUX: "MUX",
- 151:             EntityClass.LUT: "Logic",
- 152:             EntityClass.DSP: "DSP",
- 153:             EntityClass.IO_PORT: f"Port {node.local_name}",
- 154:         },
- 155:         'ko': {
- 156:             EntityClass.FLIP_FLOP: f"레지스터 {node.local_name}",
- 157:             EntityClass.BRAM: "메모리",
- 158:             EntityClass.MUX: "멀티플렉서",
- 159:             EntityClass.LUT: "조합논리",
- 160:             EntityClass.DSP: "디지털신호처리",
- 161:             EntityClass.IO_PORT: f"포트 {node.local_name}",
- 162:         },
- 163:     }
- 164:     
- 165:     lang_map = display_map.get(lang, display_map['en'])
- 166:     return lang_map.get(
- 167:         node.entity_class,
- 168:         node.local_name or node.entity_class.value
- 169:     )
- 170: 
- 171: 
- 172: def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:
- 173:     src = nodes[e.src_node].canonical_name
- 174:     dst = nodes[e.dst_node].canonical_name
- 175: 
- 176:     if e.bit_range:
- 177:         msb, lsb = e.bit_range
- 178:         sig = f"{e.signal_name}[{msb}:{lsb}]"
- 179:     else:
- 180:         sig = e.signal_name
- 181: 
- 182:     return f"{src} -> {dst} : {sig}"
- 183: 
- 184: 
- 185: def make_edge_display_name(e: DKGEdge) -> str:
- 186:     if e.bit_range:
- 187:         msb, lsb = e.bit_range
- 188:         return f"{e.signal_name}[{msb}:{lsb}]"
- 189:     return e.signal_name
+ 131: def make_node_display_name(node: DKGNode) -> str:
+ 132:     if node.entity_class == EntityClass.FLIP_FLOP:
+ 133:         return f"Reg {node.local_name}"
+ 134:     if node.entity_class == EntityClass.BRAM:
+ 135:         return "BRAM"
+ 136:     if node.entity_class == EntityClass.MUX:
+ 137:         return "MUX"
+ 138:     if node.entity_class == EntityClass.LUT:
+ 139:         return "Logic"
+ 140:     if node.entity_class == EntityClass.DSP:
+ 141:         return "DSP"
+ 142:     if node.entity_class == EntityClass.IO_PORT:
+ 143:         return f"Port {node.local_name}"
+ 144: 
+ 145:     return node.local_name or node.entity_class.value
+ 146: 
+ 147: 
+ 148: def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:
+ 149:     src = nodes[e.src_node].canonical_name
+ 150:     dst = nodes[e.dst_node].canonical_name
+ 151: 
+ 152:     if e.bit_range:
+ 153:         msb, lsb = e.bit_range
+ 154:         sig = f"{e.signal_name}[{msb}:{lsb}]"
+ 155:     else:
+ 156:         sig = e.signal_name
+ 157: 
+ 158:     return f"{src} -> {dst} : {sig}"
+ 159: 
+ 160: 
+ 161: def make_edge_display_name(e: DKGEdge) -> str:
+ 162:     if e.bit_range:
+ 163:         msb, lsb = e.bit_range
+ 164:         return f"{e.signal_name}[{msb}:{lsb}]"
+ 165:     return e.signal_name
 
 
-================================================================================
+
 FILE: dkg\graph_build.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from collections import defaultdict
@@ -872,9 +972,9 @@ FILE: dkg\graph_build.py
  446:     return nodes, edges
 
 
-================================================================================
+
 FILE: dkg\graph_metadata.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from dataclasses import dataclass, field
@@ -979,9 +1079,9 @@ FILE: dkg\graph_metadata.py
  102:         return should_update_field(current_source, new_source)
 
 
-================================================================================
+
 FILE: dkg\graph_updater.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from typing import Any, Dict, Optional
@@ -1135,9 +1235,375 @@ FILE: dkg\graph_updater.py
  151:         }
 
 
-================================================================================
+
+FILE: dkg\graphcache\graph_version.py
+
+   1: from dataclasses import dataclass
+   2: from typing import Optional
+   3: @dataclass
+   4: class GraphVersion:
+   5:     rtl_hash: str
+   6:     constraint_hash: Optional[str]
+   7:     timing_hash: Optional[str]
+   8:     policy_versions: dict
+   9: # 캐싱을 위한 그래프 버전 정보
+  10: # TODO: 향후 그래프 구성 요소별 해시 추가 고려
+
+
+FILE: dkg\graphcache\snapshot.py
+
+   1: """
+   2: 그래프 스냅샷 저장/로딩 (읽기 전용 캐싱용)
+   3: 
+   4: 메타데이터는 제외하고 필수 데이터만 JSON으로 저장:
+   5: - DKG 그래프 (nodes + edges)
+   6: - SuperGraph (supernodes + superedges + node_to_super)
+   7: - GraphVersion (메타데이터)
+   8: """
+   9: from __future__ import annotations
+  10: 
+  11: import json
+  12: from dataclasses import asdict, dataclass
+  13: from pathlib import Path
+  14: from typing import Any, Dict, Optional, Set, Tuple
+  15: 
+  16: from ..graph import DKGEdge, DKGNode, EdgeFlowType, EntityClass, RelationType
+  17: from ..provenance import Provenance
+  18: from ..supergraph import SuperClass, SuperEdge, SuperGraph, SuperNode
+  19: from .graph_version import GraphVersion
+  20: 
+  21: 
+  22: @dataclass
+  23: class GraphSnapshot:
+  24:     """전체 그래프 스냅샷"""
+  25:     version: GraphVersion
+  26:     dkg_nodes: Dict[str, DKGNode]
+  27:     dkg_edges: Dict[str, DKGEdge]
+  28:     supergraph: Optional[SuperGraph] = None
+  29: 
+  30: 
+  31: def _serialize_node(node: DKGNode) -> dict:
+  32:     """DKGNode를 JSON 직렬화 가능한 dict로 변환 (얕게)"""
+  33:     return {
+  34:         "node_id": node.node_id,
+  35:         "entity_class": node.entity_class.value,
+  36:         "hier_path": node.hier_path,
+  37:         "local_name": node.local_name,
+  38:         "canonical_name": node.canonical_name,
+  39:         "short_alias": node.short_alias,
+  40:         "parameters": node.parameters,
+  41:         "attributes": node.attributes,
+  42:         "clock_domain": node.clock_domain,
+  43:         "arrival_time": node.arrival_time,
+  44:         "required_time": node.required_time,
+  45:         "slack": node.slack,
+  46:         "in_edges": node.in_edges,
+  47:         "out_edges": node.out_edges,
+  48:         # provenance는 얕게: 기본 정보만
+  49:         "provenances": [
+  50:             {
+  51:                 "origin_file": p.origin_file,
+  52:                 "origin_line": p.origin_line,
+  53:                 "tool_stage": p.tool_stage,
+  54:                 "confidence": p.confidence,
+  55:             }
+  56:             for p in node.provenances
+  57:         ] if node.provenances else [],
+  58:         "primary_provenance": {
+  59:             "origin_file": node.primary_provenance.origin_file,
+  60:             "origin_line": node.primary_provenance.origin_line,
+  61:             "tool_stage": node.primary_provenance.tool_stage,
+  62:             "confidence": node.primary_provenance.confidence,
+  63:         } if node.primary_provenance else None,
+  64:     }
+  65: 
+  66: 
+  67: def _deserialize_node(data: dict) -> DKGNode:
+  68:     """dict에서 DKGNode 복원"""
+  69:     from ..stages import ParsingStage
+  70:     
+  71:     # provenance 복원
+  72:     provenances = []
+  73:     if data.get("provenances"):
+  74:         for p in data["provenances"]:
+  75:             provenances.append(Provenance(
+  76:                 origin_file=p.get("origin_file"),
+  77:                 origin_line=p.get("origin_line"),
+  78:                 tool_stage=p.get("tool_stage", "rtl"),
+  79:                 confidence=p.get("confidence", "exact"),
+  80:             ))
+  81:     
+  82:     primary_provenance = None
+  83:     if data.get("primary_provenance"):
+  84:         p = data["primary_provenance"]
+  85:         primary_provenance = Provenance(
+  86:             origin_file=p.get("origin_file"),
+  87:             origin_line=p.get("origin_line"),
+  88:             tool_stage=p.get("tool_stage", "rtl"),
+  89:             confidence=p.get("confidence", "exact"),
+  90:         )
+  91:     
+  92:     return DKGNode(
+  93:         node_id=data["node_id"],
+  94:         entity_class=EntityClass(data["entity_class"]),
+  95:         hier_path=data["hier_path"],
+  96:         local_name=data["local_name"],
+  97:         canonical_name=data.get("canonical_name"),
+  98:         short_alias=data.get("short_alias"),
+  99:         parameters=data.get("parameters", {}),
+ 100:         attributes=data.get("attributes", {}),
+ 101:         clock_domain=data.get("clock_domain"),
+ 102:         arrival_time=data.get("arrival_time"),
+ 103:         required_time=data.get("required_time"),
+ 104:         slack=data.get("slack"),
+ 105:         in_edges=data.get("in_edges", []),
+ 106:         out_edges=data.get("out_edges", []),
+ 107:         provenances=provenances,
+ 108:         primary_provenance=primary_provenance,
+ 109:     )
+ 110: 
+ 111: 
+ 112: def _serialize_edge(edge: DKGEdge) -> dict:
+ 113:     """DKGEdge를 JSON 직렬화 가능한 dict로 변환"""
+ 114:     return {
+ 115:         "edge_id": edge.edge_id,
+ 116:         "src_node": edge.src_node,
+ 117:         "dst_node": edge.dst_node,
+ 118:         "relation_type": edge.relation_type.value,
+ 119:         "flow_type": edge.flow_type.value,
+ 120:         "signal_name": edge.signal_name,
+ 121:         "canonical_name": edge.canonical_name,
+ 122:         "bit_range": list(edge.bit_range) if edge.bit_range else None,
+ 123:         "net_id": edge.net_id,
+ 124:         "driver_type": edge.driver_type,
+ 125:         "fanout_count": edge.fanout_count,
+ 126:         "clock_signal": edge.clock_signal,
+ 127:         "reset_signal": edge.reset_signal,
+ 128:         "clock_domain_id": edge.clock_domain_id,
+ 129:         "timing_exception": edge.timing_exception,
+ 130:         "parameters": edge.parameters,
+ 131:         "delay": edge.delay,
+ 132:         "arrival_time": edge.arrival_time,
+ 133:         "required_time": edge.required_time,
+ 134:     }
+ 135: 
+ 136: 
+ 137: def _deserialize_edge(data: dict) -> DKGEdge:
+ 138:     """dict에서 DKGEdge 복원"""
+ 139:     return DKGEdge(
+ 140:         edge_id=data["edge_id"],
+ 141:         src_node=data["src_node"],
+ 142:         dst_node=data["dst_node"],
+ 143:         relation_type=RelationType(data["relation_type"]),
+ 144:         flow_type=EdgeFlowType(data["flow_type"]),
+ 145:         signal_name=data["signal_name"],
+ 146:         canonical_name=data["canonical_name"],
+ 147:         bit_range=tuple(data["bit_range"]) if data.get("bit_range") else None,
+ 148:         net_id=data.get("net_id"),
+ 149:         driver_type=data.get("driver_type"),
+ 150:         fanout_count=data.get("fanout_count"),
+ 151:         clock_signal=data.get("clock_signal"),
+ 152:         reset_signal=data.get("reset_signal"),
+ 153:         clock_domain_id=data.get("clock_domain_id"),
+ 154:         timing_exception=data.get("timing_exception"),
+ 155:         parameters=data.get("parameters", {}),
+ 156:         delay=data.get("delay"),
+ 157:         arrival_time=data.get("arrival_time"),
+ 158:         required_time=data.get("required_time"),
+ 159:     )
+ 160: 
+ 161: 
+ 162: def _serialize_supernode(sn: SuperNode) -> dict:
+ 163:     """SuperNode를 JSON 직렬화"""
+ 164:     return {
+ 165:         "node_id": sn.node_id,
+ 166:         "super_class": sn.super_class.value,
+ 167:         "member_nodes": list(sn.member_nodes),
+ 168:         "member_edges": list(sn.member_edges),
+ 169:         "aggregated_attrs": sn.aggregated_attrs,
+ 170:         "canonical_name": sn.canonical_name,
+ 171:         "display_name": sn.display_name,
+ 172:         "provenances": [
+ 173:             {"origin_file": p.origin_file, "origin_line": p.origin_line, "tool_stage": p.tool_stage}
+ 174:             for p in sn.provenances
+ 175:         ] if sn.provenances else [],
+ 176:     }
+ 177: 
+ 178: 
+ 179: def _deserialize_supernode(data: dict) -> SuperNode:
+ 180:     """dict에서 SuperNode 복원"""
+ 181:     provenances = []
+ 182:     if data.get("provenances"):
+ 183:         for p in data["provenances"]:
+ 184:             provenances.append(Provenance(
+ 185:                 origin_file=p.get("origin_file"),
+ 186:                 origin_line=p.get("origin_line"),
+ 187:                 tool_stage=p.get("tool_stage", "rtl"),
+ 188:             ))
+ 189:     
+ 190:     return SuperNode(
+ 191:         node_id=data["node_id"],
+ 192:         super_class=SuperClass(data["super_class"]),
+ 193:         member_nodes=set(data["member_nodes"]),
+ 194:         member_edges=set(data["member_edges"]),
+ 195:         aggregated_attrs=data.get("aggregated_attrs", {}),
+ 196:         canonical_name=data.get("canonical_name"),
+ 197:         display_name=data.get("display_name"),
+ 198:         provenances=provenances,
+ 199:     )
+ 200: 
+ 201: 
+ 202: def _serialize_superedge(se: SuperEdge) -> dict:
+ 203:     """SuperEdge를 JSON 직렬화"""
+ 204:     return {
+ 205:         "edge_id": se.edge_id,
+ 206:         "src_node": se.src_node,
+ 207:         "dst_node": se.dst_node,
+ 208:         "member_edges": list(se.member_edges),
+ 209:         "member_nodes": list(se.member_nodes),
+ 210:         "relation_types": [rt.value for rt in se.relation_types],
+ 211:         "flow_types": [ft.value for ft in se.flow_types],
+ 212:         "canonical_name": se.canonical_name,
+ 213:         "display_name": se.display_name,
+ 214:         "provenances": [
+ 215:             {"origin_file": p.origin_file, "origin_line": p.origin_line, "tool_stage": p.tool_stage}
+ 216:             for p in se.provenances
+ 217:         ] if se.provenances else [],
+ 218:     }
+ 219: 
+ 220: 
+ 221: def _deserialize_superedge(data: dict) -> SuperEdge:
+ 222:     """dict에서 SuperEdge 복원"""
+ 223:     provenances = []
+ 224:     if data.get("provenances"):
+ 225:         for p in data["provenances"]:
+ 226:             provenances.append(Provenance(
+ 227:                 origin_file=p.get("origin_file"),
+ 228:                 origin_line=p.get("origin_line"),
+ 229:                 tool_stage=p.get("tool_stage", "rtl"),
+ 230:             ))
+ 231:     
+ 232:     return SuperEdge(
+ 233:         edge_id=data["edge_id"],
+ 234:         src_node=data["src_node"],
+ 235:         dst_node=data["dst_node"],
+ 236:         member_edges=set(data["member_edges"]),
+ 237:         member_nodes=set(data["member_nodes"]),
+ 238:         relation_types={RelationType(rt) for rt in data["relation_types"]},
+ 239:         flow_types={EdgeFlowType(ft) for ft in data["flow_types"]},
+ 240:         canonical_name=data.get("canonical_name"),
+ 241:         display_name=data.get("display_name"),
+ 242:         provenances=provenances,
+ 243:     )
+ 244: 
+ 245: 
+ 246: def save_snapshot(
+ 247:     snapshot: GraphSnapshot,
+ 248:     filepath: Path | str,
+ 249:     indent: Optional[int] = None,
+ 250: ) -> None:
+ 251:     """스냅샷을 JSON 파일로 저장"""
+ 252:     filepath = Path(filepath)
+ 253:     filepath.parent.mkdir(parents=True, exist_ok=True)
+ 254:     
+ 255:     # 직렬화
+ 256:     data = {
+ 257:         "version": {
+ 258:             "rtl_hash": snapshot.version.rtl_hash,
+ 259:             "constraint_hash": snapshot.version.constraint_hash,
+ 260:             "timing_hash": snapshot.version.timing_hash,
+ 261:             "policy_versions": snapshot.version.policy_versions,
+ 262:         },
+ 263:         "dkg": {
+ 264:             "nodes": {
+ 265:                 node_id: _serialize_node(node)
+ 266:                 for node_id, node in snapshot.dkg_nodes.items()
+ 267:             },
+ 268:             "edges": {
+ 269:                 edge_id: _serialize_edge(edge)
+ 270:                 for edge_id, edge in snapshot.dkg_edges.items()
+ 271:             },
+ 272:         },
+ 273:     }
+ 274:     
+ 275:     # SuperGraph가 있으면 추가
+ 276:     if snapshot.supergraph:
+ 277:         sg = snapshot.supergraph
+ 278:         data["supergraph"] = {
+ 279:             "super_nodes": {
+ 280:                 node_id: _serialize_supernode(sn)
+ 281:                 for node_id, sn in sg.super_nodes.items()
+ 282:             },
+ 283:             "super_edges": {
+ 284:                 f"{src}→{dst}": _serialize_superedge(se)
+ 285:                 for (src, dst), se in sg.super_edges.items()
+ 286:             },
+ 287:             "node_to_super": sg.node_to_super,
+ 288:         }
+ 289:     
+ 290:     # JSON 저장
+ 291:     with open(filepath, "w", encoding="utf-8") as f:
+ 292:         json.dump(data, f, indent=indent, ensure_ascii=False)
+ 293: 
+ 294: 
+ 295: def load_snapshot(filepath: Path | str) -> GraphSnapshot:
+ 296:     """JSON 파일에서 스냅샷 로딩"""
+ 297:     filepath = Path(filepath)
+ 298:     
+ 299:     with open(filepath, "r", encoding="utf-8") as f:
+ 300:         data = json.load(f)
+ 301:     
+ 302:     # GraphVersion 복원
+ 303:     version_data = data["version"]
+ 304:     version = GraphVersion(
+ 305:         rtl_hash=version_data["rtl_hash"],
+ 306:         constraint_hash=version_data.get("constraint_hash"),
+ 307:         timing_hash=version_data.get("timing_hash"),
+ 308:         policy_versions=version_data.get("policy_versions", {}),
+ 309:     )
+ 310:     
+ 311:     # DKG 그래프 복원
+ 312:     dkg_data = data["dkg"]
+ 313:     dkg_nodes = {
+ 314:         node_id: _deserialize_node(node_data)
+ 315:         for node_id, node_data in dkg_data["nodes"].items()
+ 316:     }
+ 317:     dkg_edges = {
+ 318:         edge_id: _deserialize_edge(edge_data)
+ 319:         for edge_id, edge_data in dkg_data["edges"].items()
+ 320:     }
+ 321:     
+ 322:     # SuperGraph 복원 (있으면)
+ 323:     supergraph = None
+ 324:     if "supergraph" in data:
+ 325:         sg_data = data["supergraph"]
+ 326:         super_nodes = {
+ 327:             node_id: _deserialize_supernode(sn_data)
+ 328:             for node_id, sn_data in sg_data["super_nodes"].items()
+ 329:         }
+ 330:         super_edges = {
+ 331:             tuple(key.split("→")): _deserialize_superedge(se_data)
+ 332:             for key, se_data in sg_data["super_edges"].items()
+ 333:         }
+ 334:         node_to_super = sg_data["node_to_super"]
+ 335:         
+ 336:         supergraph = SuperGraph(
+ 337:             super_nodes=super_nodes,
+ 338:             super_edges=super_edges,
+ 339:             node_to_super=node_to_super,
+ 340:         )
+ 341:     
+ 342:     return GraphSnapshot(
+ 343:         version=version,
+ 344:         dkg_nodes=dkg_nodes,
+ 345:         dkg_edges=dkg_edges,
+ 346:         supergraph=supergraph,
+ 347:     )
+
+
+
 FILE: dkg\ir.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from dataclasses import dataclass, field
@@ -1163,9 +1629,9 @@ FILE: dkg\ir.py
   23:     src: Optional[str] = None
 
 
-================================================================================
-FILE: dkg\parsers\sdc_parser.py
-================================================================================
+
+FILE: dkg\parsers\bd_parser.py
+
    1: from __future__ import annotations
    2: 
    3: import re
@@ -1177,167 +1643,366 @@ FILE: dkg\parsers\sdc_parser.py
    9: from . import ConstraintParser
   10: 
   11: 
-  12: class SdcParser(ConstraintParser):
+  12: class BdParser(ConstraintParser):
   13:     """
-  14:     SDC (Synopsys Design Constraints) 파서.
-  15:     
-  16:     처리하는 명령:
-  17:     - create_clock: 클럭 정의
-  18:     - set_input_delay / set_output_delay: I/O 타이밍
-  19:     - set_false_path: false path 제약
-  20:     - set_multicycle_path: multicycle 제약
-  21:     - set_max_delay / set_min_delay: 지연 제약
-  22:     """
-  23:     
-  24:     def get_stage(self) -> ParsingStage:
-  25:         return ParsingStage.CONSTRAINTS
-  26:     
-  27:     def parse_and_update(
-  28:         self,
-  29:         filepath: str,
-  30:         updater: GraphUpdater,
-  31:         nodes: Dict[str, DKGNode],
-  32:         edges: Dict[str, DKGEdge],
-  33:     ) -> None:
-  34:         with open(filepath, "r", encoding="utf-8") as f:
-  35:             lines = f.readlines()
-  36:         
-  37:         for line_num, line in enumerate(lines, start=1):
-  38:             line = line.strip()
-  39:             
-  40:             # create_clock 처리
-  41:             if line.startswith("create_clock"):
-  42:                 self._parse_create_clock(
-  43:                     line, line_num, filepath, updater, nodes, edges
-  44:                 )
-  45:             
-  46:             # set_false_path 처리
-  47:             elif line.startswith("set_false_path"):
-  48:                 self._parse_false_path(
-  49:                     line, line_num, filepath, updater, edges
-  50:                 )
-  51:             
-  52:             # set_multicycle_path 처리
-  53:             elif line.startswith("set_multicycle_path"):
-  54:                 self._parse_multicycle_path(
-  55:                     line, line_num, filepath, updater, edges
-  56:                 )
-  57:     
-  58:     def _parse_create_clock(
-  59:         self,
-  60:         line: str,
-  61:         line_num: int,
-  62:         filepath: str,
-  63:         updater: GraphUpdater,
-  64:         nodes: Dict[str, DKGNode],
-  65:         edges: Dict[str, DKGEdge],
-  66:     ) -> None:
-  67:         """
-  68:         create_clock 명령 파싱.
-  69:         예: create_clock -name clk -period 10 [get_ports clk]
-  70:         """
-  71:         # 간단한 정규식 (실제로는 더 정교해야 함)
-  72:         match = re.search(r"-name\s+(\w+)", line)
-  73:         if not match:
-  74:             return
-  75:         
-  76:         clock_name = match.group(1)
-  77:         
-  78:         # get_ports로 포트 이름 추출
-  79:         port_match = re.search(r"get_ports\s+(\w+)", line)
-  80:         if not port_match:
-  81:             return
-  82:         
-  83:         port_name = port_match.group(1)
-  84:         
-  85:         # 해당 포트를 가진 노드들 찾기
-  86:         for node_id, node in nodes.items():
-  87:             if node.local_name == port_name:
-  88:                 updater.update_node_field(
-  89:                     node_id,
-  90:                     "clock_domain",
-  91:                     clock_name,
-  92:                     FieldSource.DECLARED,
-  93:                     ParsingStage.CONSTRAINTS,
-  94:                     filepath,
-  95:                     line_num,
-  96:                 )
-  97:         
-  98:         # 해당 신호를 가진 엣지들도 업데이트
-  99:         for edge_id, edge in edges.items():
- 100:             if edge.signal_name == port_name:
- 101:                 updater.update_edge_field(
- 102:                     edge_id,
- 103:                     "clock_signal",
- 104:                     clock_name,
- 105:                     FieldSource.DECLARED,
- 106:                     ParsingStage.CONSTRAINTS,
- 107:                     filepath,
- 108:                     line_num,
- 109:                 )
- 110:     
- 111:     def _parse_false_path(
- 112:         self,
- 113:         line: str,
- 114:         line_num: int,
- 115:         filepath: str,
- 116:         updater: GraphUpdater,
- 117:         edges: Dict[str, DKGEdge],
- 118:     ) -> None:
- 119:         """
- 120:         set_false_path 명령 파싱.
- 121:         예: set_false_path -from [get_pins src/*] -to [get_pins dst/*]
- 122:         """
- 123:         # 간단한 구현 (실제로는 -from/-to 파싱 필요)
- 124:         # TODO: 실제 from/to 노드 매칭 로직 구현
- 125:         
- 126:         # 일단 placeholder
- 127:         # affected_edges = find_edges_between(from_pattern, to_pattern)
- 128:         # for edge_id in affected_edges:
- 129:         #     updater.update_edge_field(...)
- 130:         pass
- 131:     
- 132:     def _parse_multicycle_path(
- 133:         self,
- 134:         line: str,
- 135:         line_num: int,
- 136:         filepath: str,
- 137:         updater: GraphUpdater,
- 138:         edges: Dict[str, DKGEdge],
- 139:     ) -> None:
- 140:         """
- 141:         set_multicycle_path 명령 파싱.
- 142:         예: set_multicycle_path 2 -from [get_pins ...] -to [get_pins ...]
- 143:         """
- 144:         # TODO: 구현
- 145:         pass
+  14:     BD (block design) parser for IP instance grouping seeds.
+  15:     """
+  16: 
+  17:     def get_stage(self) -> ParsingStage:
+  18:         return ParsingStage.BOARD
+  19: 
+  20:     def parse_and_update(
+  21:         self,
+  22:         filepath: str,
+  23:         updater: GraphUpdater,
+  24:         nodes: Dict[str, DKGNode],
+  25:         edges: Dict[str, DKGEdge],
+  26:     ) -> None:
+  27:         with open(filepath, "r", encoding="utf-8") as f:
+  28:             lines = f.readlines()
+  29: 
+  30:         for line_num, line in enumerate(lines, start=1):
+  31:             raw = line.strip()
+  32:             if not raw or raw.startswith("#"):
+  33:                 continue
+  34: 
+  35:             if raw.startswith("create_bd_cell"):
+  36:                 self._parse_create_bd_cell(raw, line_num, filepath, updater, nodes)
+  37: 
+  38:     def _parse_create_bd_cell(
+  39:         self,
+  40:         line: str,
+  41:         line_num: int,
+  42:         filepath: str,
+  43:         updater: GraphUpdater,
+  44:         nodes: Dict[str, DKGNode],
+  45:     ) -> None:
+  46:         match = re.search(r"create_bd_cell\s+-type\s+ip\s+-vlnv\s+(\S+)\s+(\S+)", line)
+  47:         if not match:
+  48:             return
+  49: 
+  50:         vlnv = match.group(1)
+  51:         inst = match.group(2)
+  52: 
+  53:         for node_id, node in nodes.items():
+  54:             candidates = [node.local_name, node.hier_path, node.canonical_name]
+  55:             if not any(inst == cand or (cand and inst in cand) for cand in candidates):
+  56:                 continue
+  57: 
+  58:             new_attrs = dict(node.attributes)
+  59:             new_attrs["bd_ip"] = vlnv
+  60:             new_attrs["bd_group"] = vlnv
+  61: 
+  62:             updater.update_node_field(
+  63:                 node_id,
+  64:                 "attributes",
+  65:                 new_attrs,
+  66:                 FieldSource.DECLARED,
+  67:                 ParsingStage.BOARD,
+  68:                 filepath,
+  69:                 line_num,
+  70:             )
 
 
-================================================================================
-FILE: dkg\parsers\xdc_parser.py
-================================================================================
+
+FILE: dkg\parsers\parser_utils.py
+
    1: from __future__ import annotations
    2: 
-   3: from typing import Dict
-   4: 
-   5: from ..graph import DKGEdge, DKGNode
-   6: from ..graph_updater import GraphUpdater
-   7: from ..stages import ParsingStage
-   8: from . import ConstraintParser
-   9: 
+   3: import re
+   4: from typing import Iterable, List
+   5: 
+   6: 
+   7: def _split_target_list(raw: str) -> List[str]:
+   8:     text = raw.strip()
+   9:     if text.startswith("{") and text.endswith("}"):
+  10:         text = text[1:-1].strip()
+  11:     parts = re.split(r"\s+", text)
+  12:     return [p.strip('"') for p in parts if p.strip('"')]
+  13: 
+  14: 
+  15: def extract_bracket_targets(line: str, object_types: Iterable[str]) -> List[str]:
+  16:     targets: List[str] = []
+  17:     pattern = r"\[get_(%s)\s+([^\]]+)\]" % "|".join(object_types)
+  18:     for match in re.finditer(pattern, line):
+  19:         targets.extend(_split_target_list(match.group(2)))
+  20:     return targets
+  21: 
+  22: 
+  23: def extract_option_targets(line: str, option: str, object_types: Iterable[str]) -> List[str]:
+  24:     targets: List[str] = []
+  25:     pattern = r"%s\s+\[get_(%s)\s+([^\]]+)\]" % (re.escape(option), "|".join(object_types))
+  26:     for match in re.finditer(pattern, line):
+  27:         targets.extend(_split_target_list(match.group(2)))
+  28:     return targets
+  29: 
+  30: 
+  31: def pattern_match(pattern: str, candidate: str) -> bool:
+  32:     if not pattern:
+  33:         return False
+  34:     if "*" not in pattern and "?" not in pattern:
+  35:         if pattern == candidate:
+  36:             return True
+  37:         if pattern in candidate or candidate in pattern:
+  38:             return True
+  39:     escaped = re.escape(pattern)
+  40:     escaped = escaped.replace(r"\*", ".*").replace(r"\?", ".")
+  41:     regex = re.compile(r"^%s$" % escaped)
+  42:     return bool(regex.match(candidate))
+  43: 
+  44: 
+  45: def match_any(patterns: Iterable[str], candidates: Iterable[str]) -> bool:
+  46:     for pattern in patterns:
+  47:         for cand in candidates:
+  48:             if cand and pattern_match(pattern, cand):
+  49:                 return True
+  50:     return False
+
+
+
+FILE: dkg\parsers\sdc_parser.py
+
+   1: from __future__ import annotations
+   2: 
+   3: import re
+   4: from typing import Dict
+   5: 
+   6: from ..graph import DKGEdge, DKGNode
+   7: from ..graph_updater import GraphUpdater
+   8: from ..stages import FieldSource, ParsingStage
+   9: from . import ConstraintParser
+  10: from .parser_utils import extract_option_targets, match_any
+  11: 
+  12: 
+  13: class SdcParser(ConstraintParser):
+  14:     """
+  15:     SDC (Synopsys Design Constraints) 파서.
+  16:     
+  17:     처리하는 명령:
+  18:     - create_clock: 클럭 정의
+  19:     - set_input_delay / set_output_delay: I/O 타이밍
+  20:     - set_false_path: false path 제약
+  21:     - set_multicycle_path: multicycle 제약
+  22:     - set_max_delay / set_min_delay: 지연 제약
+  23:     """
+  24:     
+  25:     def get_stage(self) -> ParsingStage:
+  26:         return ParsingStage.CONSTRAINTS
+  27:     
+  28:     def parse_and_update(
+  29:         self,
+  30:         filepath: str,
+  31:         updater: GraphUpdater,
+  32:         nodes: Dict[str, DKGNode],
+  33:         edges: Dict[str, DKGEdge],
+  34:     ) -> None:
+  35:         with open(filepath, "r", encoding="utf-8") as f:
+  36:             lines = f.readlines()
+  37:         
+  38:         for line_num, line in enumerate(lines, start=1):
+  39:             line = line.strip()
+  40:             
+  41:             # create_clock 처리
+  42:             if line.startswith("create_clock"):
+  43:                 self._parse_create_clock(
+  44:                     line, line_num, filepath, updater, nodes, edges
+  45:                 )
+  46:             
+  47:             # set_false_path 처리
+  48:             elif line.startswith("set_false_path"):
+  49:                 self._parse_false_path(
+  50:                     line, line_num, filepath, updater, nodes, edges
+  51:                 )
+  52:             
+  53:             # set_multicycle_path 처리
+  54:             elif line.startswith("set_multicycle_path"):
+  55:                 self._parse_multicycle_path(
+  56:                     line, line_num, filepath, updater, nodes, edges
+  57:                 )
+  58:     
+  59:     def _parse_create_clock(
+  60:         self,
+  61:         line: str,
+  62:         line_num: int,
+  63:         filepath: str,
+  64:         updater: GraphUpdater,
+  65:         nodes: Dict[str, DKGNode],
+  66:         edges: Dict[str, DKGEdge],
+  67:     ) -> None:
+  68:         """
+  69:         create_clock 명령 파싱.
+  70:         예: create_clock -name clk -period 10 [get_ports clk]
+  71:         """
+  72:         # 간단한 정규식 (실제로는 더 정교해야 함)
+  73:         match = re.search(r"-name\s+(\w+)", line)
+  74:         if not match:
+  75:             return
+  76:         
+  77:         clock_name = match.group(1)
+  78:         
+  79:         # get_ports로 포트 이름 추출
+  80:         port_match = re.search(r"get_ports\s+(\w+)", line)
+  81:         if not port_match:
+  82:             return
+  83:         
+  84:         port_name = port_match.group(1)
+  85:         
+  86:         # 해당 포트를 가진 노드들 찾기
+  87:         for node_id, node in nodes.items():
+  88:             if node.local_name == port_name:
+  89:                 updater.update_node_field(
+  90:                     node_id,
+  91:                     "clock_domain",
+  92:                     clock_name,
+  93:                     FieldSource.DECLARED,
+  94:                     ParsingStage.CONSTRAINTS,
+  95:                     filepath,
+  96:                     line_num,
+  97:                 )
+  98:         
+  99:         # 해당 신호를 가진 엣지들도 업데이트
+ 100:         for edge_id, edge in edges.items():
+ 101:             if edge.signal_name == port_name:
+ 102:                 updater.update_edge_field(
+ 103:                     edge_id,
+ 104:                     "clock_signal",
+ 105:                     clock_name,
+ 106:                     FieldSource.DECLARED,
+ 107:                     ParsingStage.CONSTRAINTS,
+ 108:                     filepath,
+ 109:                     line_num,
+ 110:                 )
+ 111:     
+ 112:     def _parse_false_path(
+ 113:         self,
+ 114:         line: str,
+ 115:         line_num: int,
+ 116:         filepath: str,
+ 117:         updater: GraphUpdater,
+ 118:         nodes: Dict[str, DKGNode],
+ 119:         edges: Dict[str, DKGEdge],
+ 120:     ) -> None:
+ 121:         """
+ 122:         set_false_path 명령 파싱.
+ 123:         예: set_false_path -from [get_pins src/*] -to [get_pins dst/*]
+ 124:         """
+ 125:         from_patterns = extract_option_targets(line, "-from", ("ports", "pins", "cells"))
+ 126:         to_patterns = extract_option_targets(line, "-to", ("ports", "pins", "cells"))
+ 127: 
+ 128:         if not from_patterns and not to_patterns:
+ 129:             return
+ 130: 
+ 131:         for edge_id, edge in edges.items():
+ 132:             src_node = nodes.get(edge.src_node)
+ 133:             dst_node = nodes.get(edge.dst_node)
+ 134:             if not src_node or not dst_node:
+ 135:                 continue
+ 136: 
+ 137:             src_candidates = [src_node.local_name, src_node.hier_path, src_node.canonical_name]
+ 138:             dst_candidates = [dst_node.local_name, dst_node.hier_path, dst_node.canonical_name]
+ 139: 
+ 140:             src_match = True if not from_patterns else match_any(from_patterns, src_candidates)
+ 141:             dst_match = True if not to_patterns else match_any(to_patterns, dst_candidates)
+ 142: 
+ 143:             if src_match and dst_match:
+ 144:                 updater.update_edge_field(
+ 145:                     edge_id,
+ 146:                     "timing_exception",
+ 147:                     "false_path",
+ 148:                     FieldSource.DECLARED,
+ 149:                     ParsingStage.CONSTRAINTS,
+ 150:                     filepath,
+ 151:                     line_num,
+ 152:                 )
+ 153:     
+ 154:     def _parse_multicycle_path(
+ 155:         self,
+ 156:         line: str,
+ 157:         line_num: int,
+ 158:         filepath: str,
+ 159:         updater: GraphUpdater,
+ 160:         nodes: Dict[str, DKGNode],
+ 161:         edges: Dict[str, DKGEdge],
+ 162:     ) -> None:
+ 163:         """
+ 164:         set_multicycle_path 명령 파싱.
+ 165:         예: set_multicycle_path 2 -from [get_pins ...] -to [get_pins ...]
+ 166:         """
+ 167:         value_match = re.search(r"set_multicycle_path\s+(-?\d+)", line)
+ 168:         if not value_match:
+ 169:             return
+ 170: 
+ 171:         multicycle = int(value_match.group(1))
+ 172:         mc_type = None
+ 173:         if "-hold" in line:
+ 174:             mc_type = "hold"
+ 175:         elif "-setup" in line:
+ 176:             mc_type = "setup"
+ 177: 
+ 178:         from_patterns = extract_option_targets(line, "-from", ("ports", "pins", "cells"))
+ 179:         to_patterns = extract_option_targets(line, "-to", ("ports", "pins", "cells"))
+ 180: 
+ 181:         if not from_patterns and not to_patterns:
+ 182:             return
+ 183: 
+ 184:         for edge_id, edge in edges.items():
+ 185:             src_node = nodes.get(edge.src_node)
+ 186:             dst_node = nodes.get(edge.dst_node)
+ 187:             if not src_node or not dst_node:
+ 188:                 continue
+ 189: 
+ 190:             src_candidates = [src_node.local_name, src_node.hier_path, src_node.canonical_name]
+ 191:             dst_candidates = [dst_node.local_name, dst_node.hier_path, dst_node.canonical_name]
+ 192: 
+ 193:             src_match = True if not from_patterns else match_any(from_patterns, src_candidates)
+ 194:             dst_match = True if not to_patterns else match_any(to_patterns, dst_candidates)
+ 195: 
+ 196:             if not (src_match and dst_match):
+ 197:                 continue
+ 198: 
+ 199:             new_params = dict(edge.parameters)
+ 200:             existing = new_params.get("multicycle")
+ 201:             if existing is None or multicycle > existing:
+ 202:                 new_params["multicycle"] = multicycle
+ 203:             if mc_type:
+ 204:                 new_params["multicycle_type"] = mc_type
+ 205: 
+ 206:             updater.update_edge_field(
+ 207:                 edge_id,
+ 208:                 "parameters",
+ 209:                 new_params,
+ 210:                 FieldSource.DECLARED,
+ 211:                 ParsingStage.CONSTRAINTS,
+ 212:                 filepath,
+ 213:                 line_num,
+ 214:             )
+
+
+
+FILE: dkg\parsers\tcl_parser.py
+
+   1: from __future__ import annotations
+   2: 
+   3: import re
+   4: from typing import Dict, Optional
+   5: 
+   6: from ..graph import DKGEdge, DKGNode
+   7: from ..graph_updater import GraphUpdater
+   8: from ..stages import FieldSource, ParsingStage
+   9: from . import ConstraintParser
   10: 
-  11: class XdcParser(ConstraintParser):
-  12:     """
-  13:     XDC (Xilinx Design Constraints) 파서.
-  14:     
-  15:     SDC와 유사하지만 Xilinx 특화 명령 포함:
-  16:     - set_property LOC / IOSTANDARD: 핀 배치
-  17:     - create_pblock: 물리적 블록 정의
+  11: 
+  12: class TclParser(ConstraintParser):
+  13:     """
+  14:     TCL floorplan parser.
+  15: 
+  16:     - design vs sim flag
+  17:     - top scope
   18:     """
-  19:     
+  19: 
   20:     def get_stage(self) -> ParsingStage:
-  21:         return ParsingStage.CONSTRAINTS
-  22:     
+  21:         return ParsingStage.FLOORPLAN
+  22: 
   23:     def parse_and_update(
   24:         self,
   25:         filepath: str,
@@ -1345,14 +2010,603 @@ FILE: dkg\parsers\xdc_parser.py
   27:         nodes: Dict[str, DKGNode],
   28:         edges: Dict[str, DKGEdge],
   29:     ) -> None:
-  30:         # TODO: XDC 파싱 구현
-  31:         # SDC 파서와 유사하지만 set_property 등 처리
-  32:         pass
+  30:         with open(filepath, "r", encoding="utf-8") as f:
+  31:             lines = f.readlines()
+  32: 
+  33:         top_scope: Optional[str] = None
+  34:         design_context: Optional[str] = None
+  35: 
+  36:         for line in lines:
+  37:             raw = line.strip()
+  38:             if not raw or raw.startswith("#"):
+  39:                 continue
+  40: 
+  41:             top_scope = top_scope or self._parse_top_scope(raw)
+  42:             design_context = design_context or self._parse_design_context(raw)
+  43: 
+  44:         if not top_scope and not design_context:
+  45:             return
+  46: 
+  47:         for node_id, node in nodes.items():
+  48:             if top_scope and node.hier_path != top_scope:
+  49:                 continue
+  50: 
+  51:             new_attrs = dict(node.attributes)
+  52:             if top_scope:
+  53:                 new_attrs["top_scope"] = top_scope
+  54:             if design_context:
+  55:                 new_attrs["design_context"] = design_context
+  56: 
+  57:             updater.update_node_field(
+  58:                 node_id,
+  59:                 "attributes",
+  60:                 new_attrs,
+  61:                 FieldSource.DECLARED,
+  62:                 ParsingStage.FLOORPLAN,
+  63:                 filepath,
+  64:                 None,
+  65:             )
+  66: 
+  67:     def _parse_top_scope(self, line: str) -> Optional[str]:
+  68:         match = re.search(r"set_property\s+top\s+(\S+)", line)
+  69:         if match:
+  70:             return match.group(1)
+  71: 
+  72:         match = re.search(r"set\s+top_(?:module|scope)\s+(\S+)", line)
+  73:         if match:
+  74:             return match.group(1)
+  75: 
+  76:         return None
+  77: 
+  78:     def _parse_design_context(self, line: str) -> Optional[str]:
+  79:         if "-simset" in line or "simulation" in line.lower():
+  80:             return "sim"
+  81:         if "-constrset" in line or "synth" in line.lower():
+  82:             return "design"
+  83: 
+  84:         match = re.search(r"set_property\s+design_mode\s+(\S+)", line)
+  85:         if match:
+  86:             value = match.group(1).lower()
+  87:             return "sim" if "sim" in value else "design"
+  88: 
+  89:         return None
 
 
-================================================================================
+
+FILE: dkg\parsers\timing_report_parser.py
+
+   1: """
+   2: 타이밍 리포트 파서 (Vivado/PrimeTime)
+   3: 
+   4: 타이밍 리포트에서 DKG 그래프 구축에 필요한 정보 추출:
+   5: - Startpoint/Endpoint
+   6: - 경로상의 모든 셀
+   7: - 각 단계별 delay
+   8: - 최종 slack
+   9: - 클럭 도메인
+  10: 
+  11: ⚠️ 중요: 한 노드/엣지는 여러 타이밍 경로에 나타날 수 있음
+  12: - Setup path와 Hold path가 다름
+  13: - 여러 클럭 도메인 존재
+  14: - 따라서 worst-case 값만 저장하고, 상세 정보는 메타데이터에 누적
+  15: """
+  16: from __future__ import annotations
+  17: 
+  18: import re
+  19: from dataclasses import dataclass, field
+  20: from pathlib import Path
+  21: from typing import Dict, List, Optional
+  22: 
+  23: from ..graph import DKGEdge, DKGNode
+  24: from ..graph_updater import GraphUpdater
+  25: 
+  26: 
+  27: @dataclass
+  28: class TimingStage:
+  29:     """타이밍 경로의 한 단계"""
+  30:     point: str              # 셀/핀 이름
+  31:     incr_delay: float       # 증분 delay (ns)
+  32:     cumulative_delay: float # 누적 delay (ns)
+  33:     transition: str         # 'r' (rising) or 'f' (falling)
+  34: 
+  35: 
+  36: @dataclass
+  37: class TimingPath:
+  38:     """하나의 타이밍 경로"""
+  39:     startpoint: str
+  40:     endpoint: str
+  41:     clock: str
+  42:     path_type: str  # 'Setup' or 'Hold'
+  43:     
+  44:     slack: Optional[float] = None
+  45:     arrival_time: Optional[float] = None
+  46:     required_time: Optional[float] = None
+  47:     
+  48:     stages: List[TimingStage] = field(default_factory=list)
+  49: 
+  50: 
+  51: class TimingReportParser:
+  52:     """타이밍 리포트 파서 (Vivado/PrimeTime 형식)"""
+  53:     
+  54:     def __init__(self):
+  55:         self.paths: List[TimingPath] = []
+  56:     
+  57:     def parse_file(self, filepath: str | Path) -> List[TimingPath]:
+  58:         """타이밍 리포트 파일 전체 파싱"""
+  59:         filepath = Path(filepath)
+  60:         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+  61:             content = f.read()
+  62:         
+  63:         # "Startpoint:"로 시작하는 각 경로 섹션 분리
+  64:         # Vivado: "Startpoint: ..."
+  65:         # PrimeTime: "Point ..."로 시작하지만 헤더가 다름
+  66:         
+  67:         # Vivado 형식 감지
+  68:         if 'Startpoint:' in content:
+  69:             return self._parse_vivado_format(content)
+  70:         else:
+  71:             # TODO: PrimeTime 형식 지원
+  72:             return []
+  73:     
+  74:     def _parse_vivado_format(self, content: str) -> List[TimingPath]:
+  75:         """Vivado 타이밍 리포트 파싱"""
+  76:         paths = []
+  77:         
+  78:         # "Startpoint:"로 구분
+  79:         sections = re.split(r'\n(?=Startpoint:)', content)
+  80:         
+  81:         for section in sections:
+  82:             if 'Startpoint:' not in section:
+  83:                 continue
+  84:             
+  85:             path = self._parse_single_path(section)
+  86:             if path:
+  87:                 paths.append(path)
+  88:         
+  89:         self.paths = paths
+  90:         return paths
+  91:     
+  92:     def _parse_single_path(self, section: str) -> Optional[TimingPath]:
+  93:         """개별 타이밍 경로 파싱"""
+  94:         path = TimingPath(
+  95:             startpoint='',
+  96:             endpoint='',
+  97:             clock='',
+  98:             path_type='Setup',
+  99:         )
+ 100:         
+ 101:         # Startpoint 추출
+ 102:         # 예: "Startpoint: cpu/pc_reg[0] (rising edge-triggered flip-flop clocked by sys_clk)"
+ 103:         start_match = re.search(r'Startpoint:\s+(\S+)', section)
+ 104:         if not start_match:
+ 105:             return None
+ 106:         path.startpoint = start_match.group(1)
+ 107:         
+ 108:         # Endpoint 추출
+ 109:         end_match = re.search(r'Endpoint:\s+(\S+)', section)
+ 110:         if end_match:
+ 111:             path.endpoint = end_match.group(1)
+ 112:         
+ 113:         # Clock 추출
+ 114:         clock_match = re.search(r'clocked by (\w+)', section)
+ 115:         if clock_match:
+ 116:             path.clock = clock_match.group(1)
+ 117:         
+ 118:         # Path Type 추출
+ 119:         type_match = re.search(r'Path Type:\s+(\w+)', section)
+ 120:         if type_match:
+ 121:             path.path_type = type_match.group(1)
+ 122:         
+ 123:         # Slack 추출
+ 124:         # 예: "slack (MET)                                         9.37"
+ 125:         slack_match = re.search(r'slack.*?([-\d.]+)', section, re.IGNORECASE)
+ 126:         if slack_match:
+ 127:             path.slack = float(slack_match.group(1))
+ 128:         
+ 129:         # Arrival/Required time 추출
+ 130:         arrival_match = re.search(r'data arrival time\s+([\d.]+)', section)
+ 131:         if arrival_match:
+ 132:             path.arrival_time = float(arrival_match.group(1))
+ 133:         
+ 134:         required_match = re.search(r'data required time\s+([\d.]+)', section)
+ 135:         if required_match:
+ 136:             path.required_time = float(required_match.group(1))
+ 137:         
+ 138:         # 타이밍 테이블 파싱
+ 139:         # 형식:
+ 140:         #   Point                                    Incr       Path
+ 141:         #   --------------------------------------------------------
+ 142:         #   cpu/pc_reg[0]/Q (DFFQX1)                 0.15       0.65 r
+ 143:         #   cpu/decode_inst/U123/Y (AND2X1)          0.08       0.73 r
+ 144:         
+ 145:         table_pattern = r'Point\s+Incr\s+Path\s*\n\s*-+\s*\n(.*?)\n\s*data arrival time'
+ 146:         table_match = re.search(table_pattern, section, re.DOTALL)
+ 147:         
+ 148:         if table_match:
+ 149:             table_content = table_match.group(1)
+ 150:             path.stages = self._parse_timing_table(table_content)
+ 151:         
+ 152:         return path
+ 153:     
+ 154:     def _parse_timing_table(self, table_content: str) -> List[TimingStage]:
+ 155:         """타이밍 테이블 파싱"""
+ 156:         stages = []
+ 157:         lines = table_content.strip().split('\n')
+ 158:         
+ 159:         for line in lines:
+ 160:             line = line.strip()
+ 161:             if not line or line.startswith('-'):
+ 162:                 continue
+ 163:             
+ 164:             stage = self._parse_timing_line(line)
+ 165:             if stage:
+ 166:                 stages.append(stage)
+ 167:         
+ 168:         return stages
+ 169:     
+ 170:     def _parse_timing_line(self, line: str) -> Optional[TimingStage]:
+ 171:         """타이밍 테이블의 한 줄 파싱"""
+ 172:         # 여러 형식 지원:
+ 173:         # 1. "cpu/pc_reg[0]/Q (DFFQX1)     0.15       0.65 r"
+ 174:         # 2. "clock network delay (ideal)  0.50       0.50"
+ 175:         # 3. "U123/Y (AND2X1)               0.08       0.73 r"
+ 176:         
+ 177:         # 패턴: 셀 이름, 증분 delay, 누적 delay, transition (옵션)
+ 178:         pattern = r'^\s*(\S+(?:\s+\([^)]+\))?)\s+([-\d.]+)\s+([-\d.]+)\s*([rf])?'
+ 179:         match = re.match(pattern, line)
+ 180:         
+ 181:         if not match:
+ 182:             return None
+ 183:         
+ 184:         point = match.group(1)
+ 185:         # 괄호 안의 셀 타입 제거
+ 186:         point = re.sub(r'\s*\([^)]+\)', '', point).strip()
+ 187:         
+ 188:         incr = float(match.group(2))
+ 189:         path = float(match.group(3))
+ 190:         transition = match.group(4) or ''
+ 191:         
+ 192:         return TimingStage(
+ 193:             point=point,
+ 194:             incr_delay=incr,
+ 195:             cumulative_delay=path,
+ 196:             transition=transition,
+ 197:         )
+ 198:     
+ 199:     def apply_to_graph(
+ 200:         self,
+ 201:         nodes: Dict[str, DKGNode],
+ 202:         edges: Dict[str, DKGEdge],
+ 203:         updater: GraphUpdater,
+ 204:     ) -> None:
+ 205:         """파싱한 타이밍 정보를 DKG 그래프에 반영"""
+ 206:         from ..stages import FieldSource, ParsingStage
+ 207:         
+ 208:         for path in self.paths:
+ 209:             # 1. Startpoint/Endpoint 노드 업데이트
+ 210:             self._update_node_timing(
+ 211:                 path.startpoint, path, nodes, updater, is_endpoint=False
+ 212:             )
+ 213:             self._update_node_timing(
+ 214:                 path.endpoint, path, nodes, updater, is_endpoint=True
+ 215:             )
+ 216:             
+ 217:             # 2. 경로상 각 엣지에 delay 설정
+ 218:             for i in range(len(path.stages) - 1):
+ 219:                 src_stage = path.stages[i]
+ 220:                 dst_stage = path.stages[i + 1]
+ 221:                 
+ 222:                 self._update_edge_timing(
+ 223:                     src_stage, dst_stage, path, edges, updater
+ 224:                 )
+ 225:     
+ 226:     def _update_node_timing(
+ 227:         self,
+ 228:         node_name: str,
+ 229:         path: TimingPath,
+ 230:         nodes: Dict[str, DKGNode],
+ 231:         updater: GraphUpdater,
+ 232:         is_endpoint: bool,
+ 233:     ) -> None:
+ 234:         """노드의 타이밍 정보 업데이트
+ 235:         
+ 236:         주의: 한 노드는 여러 경로에 나타날 수 있으므로:
+ 237:         - slack은 최악값(worst-case)만 저장
+ 238:         - 상세 정보는 메타데이터에 누적
+ 239:         """
+ 240:         from ..stages import FieldSource, ParsingStage
+ 241:         
+ 242:         # 노드 이름 정규화 (hier_path 또는 canonical_name 매칭)
+ 243:         node = self._find_node_by_name(node_name, nodes)
+ 244:         if not node:
+ 245:             return
+ 246:         
+ 247:         node_id = node.node_id
+ 248:         
+ 249:         # Slack 업데이트 (startpoint에만, 최악값만)
+ 250:         if not is_endpoint and path.slack is not None:
+ 251:             # 기존 slack보다 나쁘면(작으면) 업데이트
+ 252:             if node.slack is None or path.slack < node.slack:
+ 253:                 node.slack = path.slack
+ 254:             
+ 255:             # 메타데이터에는 경로별로 누적 저장 (리스트)
+ 256:             metadata = updater.node_metadata[node_id]
+ 257:             existing_slacks = metadata.get('timing_slacks', [])
+ 258:             existing_slacks.append({
+ 259:                 'slack': path.slack,
+ 260:                 'path_type': path.path_type,
+ 261:                 'clock': path.clock,
+ 262:                 'endpoint': path.endpoint,
+ 263:             })
+ 264:             metadata.set(
+ 265:                 'timing_slacks',
+ 266:                 existing_slacks,
+ 267:                 FieldSource.ANALYZED,
+ 268:                 ParsingStage.TIMING,
+ 269:             )
+ 270:         
+ 271:         # Arrival time - 여러 값 중 최악(최대)만 저장
+ 272:         if path.arrival_time is not None:
+ 273:             if node.arrival_time is None or path.arrival_time > node.arrival_time:
+ 274:                 node.arrival_time = path.arrival_time
+ 275:         
+ 276:         # Required time - 여러 값 중 최선(최소)만 저장
+ 277:         if path.required_time is not None:
+ 278:             if node.required_time is None or path.required_time < node.required_time:
+ 279:                 node.required_time = path.required_time
+ 280:         
+ 281:         # Clock domain - 여러 클럭이 있을 수 있으므로 대표값만 저장
+ 282:         # (첫 번째로 발견된 클럭 or 가장 빈번한 클럭)
+ 283:         if path.clock and not node.clock_domain:
+ 284:             node.clock_domain = path.clock
+ 285:     
+ 286:     def _update_edge_timing(
+ 287:         self,
+ 288:         src_stage: TimingStage,
+ 289:         dst_stage: TimingStage,
+ 290:         path: TimingPath,
+ 291:         edges: Dict[str, DKGEdge],
+ 292:         updater: GraphUpdater,
+ 293:     ) -> None:
+ 294:         """엣지의 타이밍 정보 업데이트
+ 295:         
+ 296:         주의: 한 엣지도 여러 경로에 나타날 수 있으므로:
+ 297:         - delay는 최악값만 저장 (일반적으로 동일해야 함)
+ 298:         - 상세 정보는 메타데이터에 누적
+ 299:         """
+ 300:         from ..stages import FieldSource, ParsingStage
+ 301:         
+ 302:         # 엣지 찾기 (휴리스틱: src/dst 이름 기반)
+ 303:         edge = self._find_edge_by_pins(src_stage.point, dst_stage.point, edges)
+ 304:         if not edge:
+ 305:             return
+ 306:         
+ 307:         edge_id = edge.edge_id
+ 308:         
+ 309:         # Delay 업데이트 - 최대값 저장 (보수적)
+ 310:         if edge.delay is None or dst_stage.incr_delay > edge.delay:
+ 311:             edge.delay = dst_stage.incr_delay
+ 312:         
+ 313:         # 메타데이터에 경로별 delay 누적
+ 314:         metadata = updater.edge_metadata[edge_id]
+ 315:         existing_delays = metadata.get('timing_delays', [])
+ 316:         existing_delays.append({
+ 317:             'delay': dst_stage.incr_delay,
+ 318:             'path_type': path.path_type,
+ 319:             'clock': path.clock,
+ 320:         })
+ 321:         metadata.set(
+ 322:             'timing_delays',
+ 323:             existing_delays,
+ 324:             FieldSource.ANALYZED,
+ 325:             ParsingStage.TIMING,
+ 326:         )
+ 327:         
+ 328:         # Arrival time - 최대값만 저장
+ 329:         if edge.arrival_time is None or dst_stage.cumulative_delay > edge.arrival_time:
+ 330:             edge.arrival_time = dst_stage.cumulative_delay
+ 331:         
+ 332:         # Clock domain - 첫 번째 클럭 저장 (또는 가장 빈번한 클럭)
+ 333:         if path.clock and not edge.clock_domain_id:
+ 334:             edge.clock_domain_id = path.clock
+ 335:     
+ 336:     def _find_node_by_name(
+ 337:         self, name: str, nodes: Dict[str, DKGNode]
+ 338:     ) -> Optional[DKGNode]:
+ 339:         """이름으로 노드 찾기 (휴리스틱)"""
+ 340:         # 1. 직접 매칭
+ 341:         if name in nodes:
+ 342:             return nodes[name]
+ 343:         
+ 344:         # 2. hier_path로 매칭
+ 345:         for node in nodes.values():
+ 346:             if node.hier_path == name:
+ 347:                 return node
+ 348:         
+ 349:         # 3. canonical_name으로 매칭
+ 350:         for node in nodes.values():
+ 351:             if node.canonical_name == name:
+ 352:                 return node
+ 353:         
+ 354:         # 4. 부분 매칭 (마지막 시도)
+ 355:         for node in nodes.values():
+ 356:             if name in node.hier_path or node.hier_path in name:
+ 357:                 return node
+ 358:         
+ 359:         return None
+ 360:     
+ 361:     def _find_edge_by_pins(
+ 362:         self, src_pin: str, dst_pin: str, edges: Dict[str, DKGEdge]
+ 363:     ) -> Optional[DKGEdge]:
+ 364:         """src/dst 핀 이름으로 엣지 찾기 (휴리스틱)"""
+ 365:         # 타이밍 리포트의 핀 이름과 DKG 엣지의 노드 이름이 다를 수 있음
+ 366:         # 예: "cpu/pc_reg[0]/Q" vs "cpu.pc_reg[0]"
+ 367:         
+ 368:         for edge in edges.values():
+ 369:             src_node_name = edge.src_node
+ 370:             dst_node_name = edge.dst_node
+ 371:             
+ 372:             # 부분 매칭 시도
+ 373:             if (src_pin in src_node_name or src_node_name in src_pin) and \
+ 374:                (dst_pin in dst_node_name or dst_node_name in dst_pin):
+ 375:                 return edge
+ 376:         
+ 377:         return None
+ 378:     
+ 379:     def get_summary(self) -> Dict:
+ 380:         """파싱 결과 요약"""
+ 381:         if not self.paths:
+ 382:             return {'total_paths': 0}
+ 383:         
+ 384:         slacks = [p.slack for p in self.paths if p.slack is not None]
+ 385:         worst_slack = min(slacks) if slacks else None
+ 386:         met_count = sum(1 for s in slacks if s >= 0)
+ 387:         
+ 388:         return {
+ 389:             'total_paths': len(self.paths),
+ 390:             'worst_slack': worst_slack,
+ 391:             'met_timing': met_count,
+ 392:             'failed_timing': len(slacks) - met_count,
+ 393:             'clocks': list(set(p.clock for p in self.paths if p.clock)),
+ 394:         }
+
+
+
+FILE: dkg\parsers\xdc_parser.py
+
+   1: from __future__ import annotations
+   2: 
+   3: import re
+   4: from typing import Dict
+   5: 
+   6: from ..graph import DKGEdge, DKGNode
+   7: from ..graph_updater import GraphUpdater
+   8: from ..stages import FieldSource, ParsingStage
+   9: from . import ConstraintParser
+  10: from .parser_utils import extract_bracket_targets, match_any
+  11: 
+  12: 
+  13: class XdcParser(ConstraintParser):
+  14:     """
+  15:     XDC (Xilinx Design Constraints) 파서.
+  16:     
+  17:     SDC와 유사하지만 Xilinx 특화 명령 포함:
+  18:     - set_property LOC / IOSTANDARD: 핀 배치
+  19:     - create_pblock: 물리적 블록 정의
+  20:     """
+  21:     
+  22:     def get_stage(self) -> ParsingStage:
+  23:         return ParsingStage.CONSTRAINTS
+  24:     
+  25:     def parse_and_update(
+  26:         self,
+  27:         filepath: str,
+  28:         updater: GraphUpdater,
+  29:         nodes: Dict[str, DKGNode],
+  30:         edges: Dict[str, DKGEdge],
+  31:     ) -> None:
+  32:         with open(filepath, "r", encoding="utf-8") as f:
+  33:             lines = f.readlines()
+  34: 
+  35:         for line_num, line in enumerate(lines, start=1):
+  36:             raw = line.strip()
+  37:             if not raw or raw.startswith("#"):
+  38:                 continue
+  39: 
+  40:             if raw.startswith("set_property"):
+  41:                 self._parse_set_property(raw, line_num, filepath, updater, nodes)
+  42:             elif raw.startswith("create_pblock"):
+  43:                 self._parse_create_pblock(raw)
+  44:             elif raw.startswith("add_cells_to_pblock"):
+  45:                 self._parse_add_cells_to_pblock(raw, line_num, filepath, updater, nodes)
+  46: 
+  47:     def _parse_set_property(
+  48:         self,
+  49:         line: str,
+  50:         line_num: int,
+  51:         filepath: str,
+  52:         updater: GraphUpdater,
+  53:         nodes: Dict[str, DKGNode],
+  54:     ) -> None:
+  55:         match = re.search(r"set_property\s+(LOC|IOSTANDARD)\s+(\S+)", line)
+  56:         if not match:
+  57:             return
+  58: 
+  59:         prop = match.group(1)
+  60:         value = match.group(2)
+  61:         targets = extract_bracket_targets(line, ("ports", "pins", "cells"))
+  62:         if not targets:
+  63:             return
+  64: 
+  65:         for node_id, node in nodes.items():
+  66:             candidates = [node.local_name, node.hier_path, node.canonical_name]
+  67:             if not match_any(targets, candidates):
+  68:                 continue
+  69: 
+  70:             new_attrs = dict(node.attributes)
+  71:             new_attrs[prop] = value
+  72:             updater.update_node_field(
+  73:                 node_id,
+  74:                 "attributes",
+  75:                 new_attrs,
+  76:                 FieldSource.DECLARED,
+  77:                 ParsingStage.CONSTRAINTS,
+  78:                 filepath,
+  79:                 line_num,
+  80:             )
+  81: 
+  82:     def _parse_create_pblock(self, line: str) -> None:
+  83:         match = re.search(r"create_pblock\s+(\S+)", line)
+  84:         if not match:
+  85:             return
+  86: 
+  87:     def _parse_add_cells_to_pblock(
+  88:         self,
+  89:         line: str,
+  90:         line_num: int,
+  91:         filepath: str,
+  92:         updater: GraphUpdater,
+  93:         nodes: Dict[str, DKGNode],
+  94:     ) -> None:
+  95:         pblock_name = None
+  96:         pblock_match = re.search(r"add_cells_to_pblock\s+\[get_pblocks\s+([^\]]+)\]", line)
+  97:         if pblock_match:
+  98:             pblock_name = pblock_match.group(1).strip()
+  99:         else:
+ 100:             direct = re.search(r"add_cells_to_pblock\s+(\S+)", line)
+ 101:             if direct:
+ 102:                 pblock_name = direct.group(1)
+ 103: 
+ 104:         if not pblock_name:
+ 105:             return
+ 106: 
+ 107:         targets = extract_bracket_targets(line, ("cells",))
+ 108:         if not targets:
+ 109:             return
+ 110: 
+ 111:         for node_id, node in nodes.items():
+ 112:             candidates = [node.local_name, node.hier_path, node.canonical_name]
+ 113:             if not match_any(targets, candidates):
+ 114:                 continue
+ 115: 
+ 116:             new_attrs = dict(node.attributes)
+ 117:             new_attrs["pblock"] = pblock_name
+ 118:             new_attrs["pblock_seed"] = pblock_name
+ 119:             updater.update_node_field(
+ 120:                 node_id,
+ 121:                 "attributes",
+ 122:                 new_attrs,
+ 123:                 FieldSource.DECLARED,
+ 124:                 ParsingStage.FLOORPLAN,
+ 125:                 filepath,
+ 126:                 line_num,
+ 127:             )
+ 128: 
+
+
+
 FILE: dkg\pipeline.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from pathlib import Path
@@ -1362,137 +2616,259 @@ FILE: dkg\pipeline.py
    7: from .graph import DKGEdge, DKGNode
    8: from .graph_build import build_nodes_and_edges, build_wires_and_cells
    9: from .graph_updater import GraphUpdater
-  10: from .parsers import ConstraintParser
-  11: from .parsers.sdc_parser import SdcParser
-  12: from .parsers.xdc_parser import XdcParser
-  13: from .stages import FieldSource, ParsingStage
-  14: from .yosys_parser import parse_yosys
-  15: 
-  16: 
-  17: class DKGPipeline:
-  18:     """
-  19:     전체 DKG 구축 파이프라인.
-  20:     
-  21:     Usage:
-  22:         pipeline = DKGPipeline(yosys_config)
-  23:         
-  24:         # Stage 1: RTL 파싱
-  25:         pipeline.run_rtl_stage()
-  26:         
-  27:         # Stage 2: Constraint 추가
-  28:         pipeline.add_constraints("design.sdc")
-  29:         pipeline.add_constraints("design.xdc")
-  30:         
-  31:         # Stage 3: 타이밍 리포트 추가
-  32:         pipeline.add_timing_report("timing.rpt")
-  33:         
-  34:         # 최종 그래프 반환
-  35:         nodes, edges = pipeline.get_graph()
-  36:     """
-  37:     
-  38:     def __init__(self, yosys_config: YosysConfig):
-  39:         self.yosys_config = yosys_config
-  40:         
-  41:         self.nodes: Optional[Dict[str, DKGNode]] = None
-  42:         self.edges: Optional[Dict[str, DKGEdge]] = None
-  43:         self.updater: Optional[GraphUpdater] = None
-  44:         
-  45:         self.current_stage = None
-  46:         self.completed_stages: List[ParsingStage] = []
-  47:         
-  48:         # 파서 레지스트리
-  49:         self.parsers: Dict[str, ConstraintParser] = {
-  50:             "sdc": SdcParser(),
-  51:             "xdc": XdcParser(),
-  52:             # TODO: 추가 파서 등록
-  53:         }
-  54:     
-  55:     def run_rtl_stage(self) -> None:
-  56:         """Stage 1: RTL 파싱 (Yosys)"""
-  57:         yosys = parse_yosys(self.yosys_config)
-  58:         wires, cells = build_wires_and_cells(yosys)
-  59:         self.nodes, self.edges = build_nodes_and_edges(wires, cells)
-  60:         
-  61:         self.updater = GraphUpdater(self.nodes, self.edges)
-  62:         self.current_stage = ParsingStage.RTL
-  63:         self.completed_stages.append(ParsingStage.RTL)
-  64:         
-  65:         # 초기 메타데이터 설정 (모두 INFERRED)
-  66:         self._mark_initial_fields_as_inferred()
-  67:     
-  68:     def add_constraints(self, filepath: str) -> None:
-  69:         """Stage 2: Constraint 파일 추가"""
-  70:         if self.updater is None or self.nodes is None or self.edges is None:
-  71:             raise RuntimeError("RTL stage must be run first")
+  10: from .graphcache import GraphSnapshot, GraphVersion, load_snapshot, save_snapshot
+  11: from .parsers import ConstraintParser
+  12: from .parsers.sdc_parser import SdcParser
+  13: from .parsers.tcl_parser import TclParser
+  14: from .parsers.timing_report_parser import TimingReportParser
+  15: from .parsers.xdc_parser import XdcParser
+  16: from .parsers.bd_parser import BdParser
+  17: from .stages import FieldSource, ParsingStage
+  18: from .supergraph import SuperGraph
+  19: from .utils import compute_file_hash
+  20: from .yosys_parser import parse_yosys
+  21: 
+  22: 
+  23: class DKGPipeline:
+  24:     """
+  25:     전체 DKG 구축 파이프라인.
+  26:     
+  27:     Usage:
+  28:         pipeline = DKGPipeline(yosys_config)
+  29:         
+  30:         # Stage 1: RTL 파싱
+  31:         pipeline.run_rtl_stage()
+  32:         
+  33:         # Stage 2: Constraint 추가
+  34:         pipeline.add_constraints("design.sdc")
+  35:         pipeline.add_constraints("design.xdc")
+  36:         
+  37:         # Stage 3: 타이밍 리포트 추가
+  38:         pipeline.add_timing_report("timing.rpt")
+  39:         
+  40:         # 최종 그래프 반환
+  41:         nodes, edges = pipeline.get_graph()
+  42:     """
+  43:     
+  44:     def __init__(self, yosys_config: YosysConfig):
+  45:         self.yosys_config = yosys_config
+  46:         
+  47:         self.nodes: Optional[Dict[str, DKGNode]] = None
+  48:         self.edges: Optional[Dict[str, DKGEdge]] = None
+  49:         self.updater: Optional[GraphUpdater] = None
+  50:         self.supergraph: Optional[SuperGraph] = None
+  51:         
+  52:         self.current_stage = None
+  53:         self.completed_stages: List[ParsingStage] = []
+  54:         
+  55:         # 입력 파일 추적 (버전 계산용)
+  56:         self.rtl_files: List[str] = []
+  57:         self.constraint_files: List[str] = []
+  58:         self.timing_files: List[str] = []
+  59:         
+  60:         # 파서 레지스트리
+  61:         self.parsers: Dict[str, ConstraintParser] = {
+  62:             "sdc": SdcParser(),
+  63:             "xdc": XdcParser(),
+  64:             # TODO: 추가 파서 등록
+  65:         }
+  66:     
+  67:     def run_rtl_stage(self) -> None:
+  68:         """Stage 1: RTL 파싱 (Yosys)"""
+  69:         yosys = parse_yosys(self.yosys_config)
+  70:         wires, cells = build_wires_and_cells(yosys)
+  71:         self.nodes, self.edges = build_nodes_and_edges(wires, cells)
   72:         
-  73:         # 파일 확장자로 파서 선택
-  74:         ext = Path(filepath).suffix.lower().lstrip(".")
-  75:         
-  76:         if ext not in self.parsers:
-  77:             raise ValueError(f"Unsupported constraint format: {ext}")
-  78:         
-  79:         parser = self.parsers[ext]
-  80:         parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
-  81:         
-  82:         if ParsingStage.CONSTRAINTS not in self.completed_stages:
-  83:             self.completed_stages.append(ParsingStage.CONSTRAINTS)
-  84:     
-  85:     def add_timing_report(self, filepath: str) -> None:
-  86:         """Stage 3: 타이밍 리포트 추가"""
-  87:         # TODO: 타이밍 리포트 파서 구현
-  88:         pass
-  89:     
-  90:     def add_floorplan(self, filepath: str) -> None:
-  91:         """Stage 4: Floorplan TCL 추가"""
-  92:         # TODO: TCL 파서 구현
-  93:         pass
-  94:     
-  95:     def get_graph(self) -> tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
-  96:         """최종 그래프 반환"""
-  97:         if self.nodes is None or self.edges is None:
-  98:             raise RuntimeError("No graph available. Run RTL stage first.")
-  99:         return self.nodes, self.edges
- 100:     
- 101:     def get_updater(self) -> GraphUpdater:
- 102:         """GraphUpdater 반환 (고급 사용자용)"""
- 103:         if self.updater is None:
- 104:             raise RuntimeError("No updater available. Run RTL stage first.")
- 105:         return self.updater
- 106:     
- 107:     def export_metadata(self) -> dict:
- 108:         """메타데이터 요약 반환 (캐싱/디버깅용)"""
- 109:         if self.updater is None:
- 110:             return {}
- 111:         return self.updater.export_metadata_summary()
- 112:     
- 113:     def _mark_initial_fields_as_inferred(self) -> None:
- 114:         """RTL stage에서 추론한 필드들을 INFERRED로 마킹"""
- 115:         if self.nodes is None or self.edges is None or self.updater is None:
- 116:             return
- 117:         
- 118:         # clock_domain, flow_type 등 휴리스틱으로 채운 필드들
- 119:         for node_id, node in self.nodes.items():
- 120:             if node.clock_domain:
- 121:                 self.updater.node_metadata[node_id].set(
- 122:                     "clock_domain",
- 123:                     node.clock_domain,
- 124:                     FieldSource.INFERRED,
- 125:                     ParsingStage.RTL,
- 126:                 )
- 127:         
- 128:         for edge_id, edge in self.edges.items():
- 129:             if edge.flow_type:
- 130:                 self.updater.edge_metadata[edge_id].set(
- 131:                     "flow_type",
- 132:                     edge.flow_type.value,
- 133:                     FieldSource.INFERRED,
- 134:                     ParsingStage.RTL,
- 135:                 )
+  73:         # RTL 파일 추적
+  74:         if self.yosys_config.out_json_win:
+  75:             self.rtl_files.append(self.yosys_config.out_json_win)
+  76:         
+  77:         self.updater = GraphUpdater(self.nodes, self.edges)
+  78:         self.current_stage = ParsingStage.RTL
+  79:         self.completed_stages.append(ParsingStage.RTL)
+  80:         
+  81:         # 초기 메타데이터 설정 (모두 INFERRED)
+  82:         self._mark_initial_fields_as_inferred()
+  83:     
+  84:     def add_constraints(self, filepath: str) -> None:
+  85:         """Stage 2: Constraint 파일 추가"""
+  86:         if self.updater is None or self.nodes is None or self.edges is None:
+  87:             raise RuntimeError("RTL stage must be run first")
+  88:         
+  89:         # 파일 확장자로 파서 선택
+  90:         ext = Path(filepath).suffix.lower().lstrip(".")
+  91:         
+  92:         if ext not in self.parsers:
+  93:             raise ValueError(f"Unsupported constraint format: {ext}")
+  94:         
+  95:         parser = self.parsers[ext]
+  96:         parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
+  97:         
+  98:         # 제약 파일 추적
+  99:         self.constraint_files.append(filepath)
+ 100:         
+ 101:         if ParsingStage.CONSTRAINTS not in self.completed_stages:
+ 102:             self.completed_stages.append(ParsingStage.CONSTRAINTS)
+ 103:     
+ 104:     def add_timing_report(self, filepath: str) -> None:
+ 105:         """Stage 3: 타이밍 리포트 추가"""
+ 106:         if self.updater is None or self.nodes is None or self.edges is None:
+ 107:             raise RuntimeError("RTL stage must be run first")
+ 108:         
+ 109:         # 타이밍 리포트 파싱
+ 110:         parser = TimingReportParser()
+ 111:         paths = parser.parse_file(filepath)
+ 112:         
+ 113:         # 그래프에 반영
+ 114:         parser.apply_to_graph(self.nodes, self.edges, self.updater)
+ 115:         
+ 116:         # 파일 추적
+ 117:         self.timing_files.append(filepath)
+ 118:         
+ 119:         if ParsingStage.TIMING not in self.completed_stages:
+ 120:             self.completed_stages.append(ParsingStage.TIMING)
+ 121:         
+ 122:         # 요약 출력
+ 123:         summary = parser.get_summary()
+ 124:         print(f"✅ 타이밍 리포트 파싱 완료: {filepath}")
+ 125:         print(f"   - 경로 수: {summary['total_paths']}")
+ 126:         if summary.get('worst_slack') is not None:
+ 127:             print(f"   - 최악 slack: {summary['worst_slack']:.2f} ns")
+ 128:     
+ 129:     def add_floorplan(self, filepath: str) -> None:
+ 130:         """Stage 4: Floorplan TCL 추가"""
+ 131:         if self.updater is None or self.nodes is None or self.edges is None:
+ 132:             raise RuntimeError("RTL stage must be run first")
+ 133: 
+ 134:         parser = TclParser()
+ 135:         parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
+ 136: 
+ 137:         if ParsingStage.FLOORPLAN not in self.completed_stages:
+ 138:             self.completed_stages.append(ParsingStage.FLOORPLAN)
+ 139: 
+ 140:     def add_board(self, filepath: str) -> None:
+ 141:         """Stage 5: BD/board constraints 추가"""
+ 142:         if self.updater is None or self.nodes is None or self.edges is None:
+ 143:             raise RuntimeError("RTL stage must be run first")
+ 144: 
+ 145:         parser = BdParser()
+ 146:         parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
+ 147: 
+ 148:         if ParsingStage.BOARD not in self.completed_stages:
+ 149:             self.completed_stages.append(ParsingStage.BOARD)
+ 150:     
+ 151:     def get_graph(self) -> tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
+ 152:         """최종 그래프 반환"""
+ 153:         if self.nodes is None or self.edges is None:
+ 154:             raise RuntimeError("No graph available. Run RTL stage first.")
+ 155:         return self.nodes, self.edges
+ 156:     
+ 157:     def get_updater(self) -> GraphUpdater:
+ 158:         """GraphUpdater 반환 (고급 사용자용)"""
+ 159:         if self.updater is None:
+ 160:             raise RuntimeError("No updater available. Run RTL stage first.")
+ 161:         return self.updater
+ 162:     
+ 163:     def export_metadata(self) -> dict:
+ 164:         """메타데이터 요약 반환 (캐싱/디버깅용)"""
+ 165:         if self.updater is None:
+ 166:             return {}
+ 167:         return self.updater.export_metadata_summary()
+ 168:     
+ 169:     def _mark_initial_fields_as_inferred(self) -> None:
+ 170:         """RTL stage에서 추론한 필드들을 INFERRED로 마킹"""
+ 171:         if self.nodes is None or self.edges is None or self.updater is None:
+ 172:             return
+ 173:         
+ 174:         # clock_domain, flow_type 등 휴리스틱으로 채운 필드들
+ 175:         for node_id, node in self.nodes.items():
+ 176:             if node.clock_domain:
+ 177:                 self.updater.node_metadata[node_id].set(
+ 178:                     "clock_domain",
+ 179:                     node.clock_domain,
+ 180:                     FieldSource.INFERRED,
+ 181:                     ParsingStage.RTL,
+ 182:                 )
+ 183:         
+ 184:         for edge_id, edge in self.edges.items():
+ 185:             if edge.flow_type:
+ 186:                 self.updater.edge_metadata[edge_id].set(
+ 187:                     "flow_type",
+ 188:                     edge.flow_type.value,
+ 189:                     FieldSource.INFERRED,
+ 190:                     ParsingStage.RTL,
+ 191:                 )
+ 192:     
+ 193:     def compute_version(self) -> GraphVersion:
+ 194:         """현재 상태의 GraphVersion 계산"""
+ 195:         import hashlib
+ 196:         
+ 197:         # RTL 해시 (모든 RTL 파일의 조합)
+ 198:         rtl_hash = ""
+ 199:         if self.rtl_files:
+ 200:             combined = "".join(compute_file_hash(f) for f in self.rtl_files)
+ 201:             rtl_hash = hashlib.sha256(combined.encode()).hexdigest()[:16]
+ 202:         
+ 203:         # Constraint 해시
+ 204:         constraint_hash = None
+ 205:         if self.constraint_files:
+ 206:             combined = "".join(compute_file_hash(f) for f in self.constraint_files)
+ 207:             constraint_hash = hashlib.sha256(combined.encode()).hexdigest()[:16]
+ 208:         
+ 209:         # Timing 해시
+ 210:         timing_hash = None
+ 211:         if self.timing_files:
+ 212:             combined = "".join(compute_file_hash(f) for f in self.timing_files)
+ 213:             timing_hash = hashlib.sha256(combined.encode()).hexdigest()[:16]
+ 214:         
+ 215:         # 정책 버전 (향후 확장)
+ 216:         policy_versions = {}
+ 217:         
+ 218:         return GraphVersion(
+ 219:             rtl_hash=rtl_hash,
+ 220:             constraint_hash=constraint_hash,
+ 221:             timing_hash=timing_hash,
+ 222:             policy_versions=policy_versions,
+ 223:         )
+ 224:     
+ 225:     def save_cache(self, filepath: str | Path, indent: Optional[int] = None) -> None:
+ 226:         """현재 그래프를 캐시 파일로 저장"""
+ 227:         if self.nodes is None or self.edges is None:
+ 228:             raise RuntimeError("No graph available. Run RTL stage first.")
+ 229:         
+ 230:         version = self.compute_version()
+ 231:         snapshot = GraphSnapshot(
+ 232:             version=version,
+ 233:             dkg_nodes=self.nodes,
+ 234:             dkg_edges=self.edges,
+ 235:             supergraph=self.supergraph,
+ 236:         )
+ 237:         save_snapshot(snapshot, filepath, indent=indent)
+ 238:     
+ 239:     @classmethod
+ 240:     def load_from_cache(cls, filepath: str | Path, yosys_config: Optional[YosysConfig] = None) -> "DKGPipeline":
+ 241:         """캐시 파일에서 파이프라인 복원"""
+ 242:         snapshot = load_snapshot(filepath)
+ 243:         
+ 244:         # 더미 config (캐시 로딩 시에는 필요 없음)
+ 245:         if yosys_config is None:
+ 246:             yosys_config = YosysConfig(src_dir_win="", out_json_win="", top_module="")
+ 247:         
+ 248:         pipeline = cls(yosys_config)
+ 249:         pipeline.nodes = snapshot.dkg_nodes
+ 250:         pipeline.edges = snapshot.dkg_edges
+ 251:         pipeline.supergraph = snapshot.supergraph
+ 252:         
+ 253:         # 메타데이터는 재생성하지 않음 (읽기 전용 모드)
+ 254:         pipeline.updater = None
+ 255:         
+ 256:         return pipeline
+ 257: 
 
 
-================================================================================
+
 FILE: dkg\provenance.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from dataclasses import dataclass
@@ -1549,9 +2925,9 @@ FILE: dkg\provenance.py
   54:     return primary, new_provs
 
 
-================================================================================
+
 FILE: dkg\stages.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from enum import Enum
@@ -1619,9 +2995,9 @@ FILE: dkg\stages.py
   65:     return get_priority(new_source) >= get_priority(current_source)
 
 
-================================================================================
+
 FILE: dkg\supergraph.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: from dataclasses import dataclass, field
@@ -1633,322 +3009,582 @@ FILE: dkg\supergraph.py
    9: from .utils import stable_hash
   10: 
   11: 
-  12: class GraphViewType(str, Enum):
-  13:     Structural = "Structural"
-  14:     Timing = "Timing"
-  15:     Connectivity = "Connectivity"
-  16:     Physical = "Physical"
-  17: 
-  18: 
-  19: class SuperClass(str, Enum):
-  20:     ATOMIC = "Atomic"
-  21:     MODULE_CLUSTER = "ModuleCluster"
-  22:     SEQ_CHAIN = "SequentialChain"
-  23:     COMB_CLOUD = "CombinationalCloud"
-  24:     IO_CLUSTER = "IOCluster"
-  25:     CONSTRAINT_GROUP = "ConstraintGroup"
-  26:     CRITICAL_REGION = "CriticalRegion"
-  27:     SLACK_REGION = "SlackRegion"
-  28:     ELIMINATED = "EliminatedNode"
-  29: 
-  30: 
-  31: class NodeAction(Enum):
-  32:     PROMOTE = "promote"
-  33:     MERGE = "merge"
-  34:     ELIMINATE = "eliminate"
-  35: 
-  36: 
-  37: @dataclass
-  38: class SuperNode:
-  39:     node_id: str
-  40:     super_class: SuperClass
-  41:     member_nodes: Set[str]
-  42:     member_edges: Set[str]
-  43:     aggregated_attrs: Dict[str, Any] = field(default_factory=dict)
-  44:     provenances: List[Provenance] = field(default_factory=list)
-  45:     canonical_name: Optional[str] = None
-  46:     display_name: Optional[str] = None
-  47: 
-  48: 
-  49: @dataclass
-  50: class SuperEdge:
-  51:     edge_id: str
-  52:     src_node: str
-  53:     dst_node: str
-  54:     member_edges: Set[str]
-  55:     member_nodes: Set[str]
-  56:     relation_types: Set[RelationType]
-  57:     flow_types: Set[EdgeFlowType]
-  58:     provenances: List[Provenance] = field(default_factory=list)
-  59:     canonical_name: Optional[str] = None
-  60:     display_name: Optional[str] = None
-  61: 
-  62: 
-  63: @dataclass
-  64: class SuperGraph:
-  65:     super_nodes: Dict[str, SuperNode]
-  66:     super_edges: Dict[Tuple[str, str], SuperEdge]
-  67:     node_to_super: Dict[str, str]
-  68: 
-  69: 
-  70: def make_supernode_canonical_name(sn: SuperNode, nodes: Dict[str, DKGNode]) -> str:
-  71:     any_node = nodes[next(iter(sn.member_nodes))]
-  72:     base = any_node.hier_path
-  73:     return f"{base} : {sn.super_class.value}"
-  74: 
-  75: 
-  76: def make_supernode_display_name(sn: SuperNode) -> str:
-  77:     if sn.super_class == SuperClass.COMB_CLOUD:
-  78:         return "Combinational Logic"
-  79:     if sn.super_class == SuperClass.SEQ_CHAIN:
-  80:         return "Sequential Chain"
-  81:     if sn.super_class == SuperClass.ATOMIC:
-  82:         return "Block"
-  83:     if sn.super_class == SuperClass.ELIMINATED:
-  84:         return "Collapsed"
-  85:     return sn.super_class.value
-  86: 
-  87: 
-  88: def make_superedge_canonical_name(se: SuperEdge, super_nodes: Dict[str, SuperNode]) -> str:
-  89:     src = super_nodes[se.src_node].canonical_name
-  90:     dst = super_nodes[se.dst_node].canonical_name
-  91:     return f"{src} -> {dst}"
+  12: # ============================================================================
+  13: # Analysis Attachment Model
+  14: # ============================================================================
+  15: # Analysis는 그래프 구조를 변경하지 않는 immutable snapshot이며
+  16: # SuperNode/SuperEdge에 keyed bundle로 부착됩니다.
+  17: # ============================================================================
+  18: class AnalysisKind(str, Enum):
+  19:     TIMING = "timing"
+  20:     AREA = "area"
+  21:     POWER = "power"
+  22: 
+  23: @dataclass(frozen=True)
+  24: class TimingNodeMetrics:
+  25:     """
+  26:     SuperNode에 부착되는 Timing 분석 결과.
+  27:     
+  28:     원칙:
+  29:     - 집계 가능한 통계 정보만 포함
+  30:     - critical path 여부, slack region 등의 단언 금지
+  31:     - path membership 정보 포함 금지
+  32:     """
+  33:     # 필수 Metrics
+  34:     min_slack: float              # 절대 최악값
+  35:     p5_slack: float               # tail risk 지표 (5th percentile)
+  36:     max_arrival_time: float       # 가장 늦은 도착 시간
+  37:     min_required_time: float      # 가장 타이트한 요구 시간
+  38:     critical_node_ratio: float    # slack < threshold 비율
+  39:     near_critical_ratio: float    # slack < α·clock 비율
+  40:     
+  41:     # 선택적 Metric
+  42:     timing_risk_score: Optional[float] = None  # UI/Alert용 단일 스칼라
+  43: 
+  44: 
+  45: @dataclass(frozen=True)
+  46: class TimingEdgeMetrics:
+  47:     """
+  48:     SuperEdge에 부착되는 Timing 분석 결과.
+  49:     
+  50:     원칙:
+  51:     - 지연 특성의 통계만 제공
+  52:     - "이 edge가 slack을 결정한다" 등의 단언 금지
+  53:     - critical edge 여부 표현 금지
+  54:     """
+  55:     # 필수 Metrics
+  56:     max_delay: float
+  57:     p95_delay: float              # 95th percentile delay
+  58:     flow_type_histogram: Dict[EdgeFlowType, int]  # comb / seq 비율
+  59:     
+  60:     # 선택적 Metrics
+  61:     fanout_max: Optional[int] = None
+  62:     fanout_p95: Optional[float] = None
+  63: 
+  64: 
+  65: # ============================================================================
+  66: # 그래프 외부 Timing 정보 (필수 분리 대상)
+  67: # ============================================================================
+  68: # Timing 분석 결과 중 alert, finding, summary, path digest는
+  69: # 그래프 외부 객체로 관리하며 그래프와 재결합하지 않습니다.
+  70: # ============================================================================
+  71: 
+  72: 
+  73: class TimingAlertSeverity(str, Enum):
+  74:     INFO = "info"
+  75:     WARN = "warn"
+  76:     ERROR = "error"
+  77: 
+  78: 
+  79: @dataclass
+  80: class TimingAlert:
+  81:     """
+  82:     Timing 분석에서 발견된 Alert/Finding.
+  83:     
+  84:     그래프 외부 객체로 관리되며, entity_ref를 통해 참조만 수행.
+  85:     """
+  86:     entity_ref: str               # node_id / supernode_id / edge_id
+  87:     entity_type: str              # "node" / "supernode" / "edge"
+  88:     severity: TimingAlertSeverity
+  89:     reason: str
+  90:     metrics_snapshot: Dict[str, Any]  # 발견 시점의 metric 사본
+  91: 
   92: 
-  93: 
-  94: def make_superedge_display_name(se: SuperEdge) -> str:
-  95:     if len(se.relation_types) == 1:
-  96:         return next(iter(se.relation_types)).value.replace("Relation", "")
-  97:     return "Multiple Signals"
-  98: 
-  99: 
- 100: def supernode_signature(
- 101:     view: GraphViewType,
- 102:     super_class: SuperClass,
- 103:     member_node_ids: set[str],
- 104:     policy_version: str = "v1",
- 105: ) -> str:
- 106:     nodes_part = ",".join(sorted(member_node_ids))
- 107:     return "|".join([view.value, super_class.value, policy_version, nodes_part])
- 108: 
- 109: 
- 110: def make_supernode_id(
- 111:     view: GraphViewType,
- 112:     super_class: SuperClass,
- 113:     member_node_ids: set[str],
- 114:     policy_version: str = "v1",
- 115: ) -> str:
- 116:     sig = supernode_signature(view, super_class, member_node_ids, policy_version)
- 117:     h = stable_hash(sig)
- 118:     return f"SN_{view.value}_{super_class.value}_{h}"
- 119: 
- 120: 
- 121: def superedge_signature(
- 122:     src_sn: str,
- 123:     dst_sn: str,
- 124:     member_edge_ids: set[str],
- 125:     policy_version: str = "v1",
- 126: ) -> str:
- 127:     edges_part = ",".join(sorted(member_edge_ids))
- 128:     return "|".join([src_sn, dst_sn, policy_version, edges_part])
+  93: @dataclass
+  94: class TimingSummary:
+  95:     """
+  96:     전체 Timing 분석의 요약 정보.
+  97:     
+  98:     그래프와 독립적으로 관리되는 분석 결과 요약.
+  99:     """
+ 100:     worst_slack: float
+ 101:     violation_count: int
+ 102:     near_critical_count: int
+ 103:     clock_period: float
+ 104:     analysis_mode: str            # "setup" / "hold" / "both"
+ 105:     timestamp: Optional[str] = None
+ 106: 
+ 107: 
+ 108: @dataclass
+ 109: class CriticalPathDigest:
+ 110:     """
+ 111:     Critical Path의 참조용 Digest (선택적).
+ 112:     
+ 113:     Path digest는 참조용이며 그래프와 재결합하지 않습니다.
+ 114:     UI/Query 계층에서만 사용됩니다.
+ 115:     """
+ 116:     path_id: str
+ 117:     startpoint: str
+ 118:     endpoint: str
+ 119:     total_delay: float
+ 120:     slack: float
+ 121:     node_sequence: Optional[List[str]] = None  # 참조용
+ 122: 
+ 123: 
+ 124: class GraphViewType(str, Enum):
+ 125:     Structural = "Structural"
+ 126:     Connectivity = "Connectivity"
+ 127:     Physical = "Physical"
+ 128: 
  129: 
- 130: 
- 131: def make_superedge_id(
- 132:     src_sn: str,
- 133:     dst_sn: str,
- 134:     member_edge_ids: set[str],
- 135:     policy_version: str = "v1",
- 136: ) -> str:
- 137:     sig = superedge_signature(src_sn, dst_sn, member_edge_ids, policy_version)
- 138:     h = stable_hash(sig)
- 139:     return f"SE_{h}"
- 140: 
- 141: 
- 142: VIEW_POLICY: Dict[GraphViewType, Dict[EntityClass, NodeAction]] = {
- 143:     GraphViewType.Structural: {
- 144:         EntityClass.MODULE_INSTANCE: NodeAction.PROMOTE,
- 145:         EntityClass.FLIP_FLOP: NodeAction.MERGE,
- 146:         EntityClass.LUT: NodeAction.MERGE,
- 147:         EntityClass.MUX: NodeAction.MERGE,
- 148:         EntityClass.DSP: NodeAction.MERGE,
- 149:         EntityClass.BRAM: NodeAction.MERGE,
- 150:         EntityClass.IO_PORT: NodeAction.PROMOTE,
- 151:         EntityClass.PACKAGE_PIN: NodeAction.ELIMINATE,
- 152:         EntityClass.PBLOCK: NodeAction.ELIMINATE,
- 153:     },
- 154:     GraphViewType.Connectivity: {
- 155:         EntityClass.FLIP_FLOP: NodeAction.PROMOTE,
- 156:         EntityClass.DSP: NodeAction.PROMOTE,
- 157:         EntityClass.BRAM: NodeAction.PROMOTE,
- 158:         EntityClass.LUT: NodeAction.MERGE,
- 159:         EntityClass.MUX: NodeAction.MERGE,
- 160:         EntityClass.MODULE_INSTANCE: NodeAction.ELIMINATE,
- 161:     },
- 162: }
- 163: 
- 164: 
- 165: class ViewBuilder:
- 166:     def __init__(self, nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge], view: GraphViewType):
- 167:         self.nodes = nodes
- 168:         self.edges = edges
- 169:         self.view = view
- 170: 
- 171:         self.node_to_super: Dict[str, str] = {}
- 172:         self.super_nodes: Dict[str, SuperNode] = {}
- 173:         self.super_edges: Dict[Tuple[str, str], SuperEdge] = {}
- 174: 
- 175:     def _neighbors_1hop(self, nid: str) -> Set[str]:
- 176:         n = self.nodes[nid]
- 177:         nbrs = set()
- 178:         for eid in n.in_edges + n.out_edges:
- 179:             e = self.edges[eid]
- 180:             nbrs.add(e.src_node)
- 181:             nbrs.add(e.dst_node)
- 182:         return nbrs
- 183: 
- 184:     def cycle1_promote(self) -> None:
- 185:         for n in self.nodes.values():
- 186:             if VIEW_POLICY[self.view].get(n.entity_class) != NodeAction.PROMOTE:
- 187:                 continue
- 188: 
- 189:             sn = SuperNode(
- 190:                 node_id=f"SN_{n.node_id}",
- 191:                 super_class=SuperClass.ATOMIC,
- 192:                 member_nodes={n.node_id},
- 193:                 member_edges=set(),
- 194:                 provenances=list(n.provenances),
- 195:             )
- 196:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
- 197:             sn.display_name = make_supernode_display_name(sn)
- 198:             self.super_nodes[sn.node_id] = sn
- 199:             self.node_to_super[n.node_id] = sn.node_id
- 200: 
- 201:     def cycle2_merge(self) -> None:
- 202:         merge_candidates = {
- 203:             nid
- 204:             for nid, n in self.nodes.items()
- 205:             if VIEW_POLICY[self.view].get(n.entity_class) == NodeAction.MERGE
- 206:         }
- 207: 
- 208:         visited: Set[str] = set()
- 209: 
- 210:         for nid in merge_candidates:
- 211:             if nid in visited:
- 212:                 continue
- 213: 
- 214:             stack = [nid]
- 215:             component: Set[str] = set()
+ 130: class SuperClass(str, Enum):
+ 131:     ATOMIC = "Atomic"
+ 132:     MODULE_CLUSTER = "ModuleCluster"
+ 133:     SEQ_CHAIN = "SequentialChain"
+ 134:     COMB_CLOUD = "CombinationalCloud"
+ 135:     IO_CLUSTER = "IOCluster"
+ 136:     CONSTRAINT_GROUP = "ConstraintGroup"
+ 137:     ELIMINATED = "EliminatedNode" # superedge로 환원되지 않는 노드의 보존적 표현
+ 138: 
+ 139: 
+ 140: class NodeAction(Enum):
+ 141:     PROMOTE = "promote"
+ 142:     MERGE = "merge"
+ 143:     ELIMINATE = "eliminate"
+ 144: 
+ 145: 
+ 146: @dataclass
+ 147: class SuperNode:
+ 148:     node_id: str
+ 149:     super_class: SuperClass
+ 150:     member_nodes: Set[str]
+ 151:     member_edges: Set[str]
+ 152:     aggregated_attrs: Dict[str, Any] = field(default_factory=dict)
+ 153:     provenances: List[Provenance] = field(default_factory=list)
+ 154:     canonical_name: Optional[str] = None
+ 155:     display_name: Optional[str] = None
+ 156:     # Analysis Attachment: keyed bundle for extensibility
+ 157:     analysis: Dict[AnalysisKind, Any] = field(default_factory=dict, repr=False)
+ 158:     # analysis dict itself is mutable,
+ 159:     # but each analysis bundle MUST be immutable snapshot
+ 160: 
+ 161: # superedge는 DKGEdge와 달리 고유한 의미를 가지지 않고 그래프적 연결성을 나타내는 용도. 의미는 멤버 엣지들이 담당
+ 162: @dataclass
+ 163: class SuperEdge:
+ 164:     edge_id: str
+ 165:     src_node: str
+ 166:     dst_node: str
+ 167:     member_edges: Set[str]
+ 168:     member_nodes: Set[str]
+ 169:     relation_types: Set[RelationType]
+ 170:     flow_types: Set[EdgeFlowType]
+ 171:     provenances: List[Provenance] = field(default_factory=list)
+ 172:     canonical_name: Optional[str] = None
+ 173:     display_name: Optional[str] = None
+ 174:     # Analysis Attachment: keyed bundle for extensibility
+ 175:     analysis: Dict[AnalysisKind, Any] = field(default_factory=dict, repr=False)
+ 176:     # analysis dict itself is mutable,
+ 177:     # but each analysis bundle MUST be immutable snapshot
+ 178: 
+ 179: 
+ 180: 
+ 181: @dataclass
+ 182: class SuperGraph:
+ 183:     super_nodes: Dict[str, SuperNode]
+ 184:     super_edges: Dict[Tuple[str, str], SuperEdge]
+ 185:     node_to_super: Dict[str, str]
+ 186: 
+ 187: 
+ 188: def make_supernode_canonical_name(sn: SuperNode, nodes: Dict[str, DKGNode]) -> str:
+ 189:     any_node = nodes[next(iter(sn.member_nodes))]
+ 190:     base = any_node.hier_path
+ 191:     return f"{base} : {sn.super_class.value}"
+ 192: 
+ 193: 
+ 194: def make_supernode_display_name(sn: SuperNode) -> str:
+ 195:     if sn.super_class == SuperClass.COMB_CLOUD:
+ 196:         return "Combinational Logic"
+ 197:     if sn.super_class == SuperClass.SEQ_CHAIN:
+ 198:         return "Sequential Chain"
+ 199:     if sn.super_class == SuperClass.ATOMIC:
+ 200:         return "Block"
+ 201:     if sn.super_class == SuperClass.ELIMINATED:
+ 202:         return "Collapsed"
+ 203:     return sn.super_class.value
+ 204: 
+ 205: 
+ 206: def make_superedge_canonical_name(se: SuperEdge, super_nodes: Dict[str, SuperNode]) -> str:
+ 207:     src = super_nodes[se.src_node].canonical_name
+ 208:     dst = super_nodes[se.dst_node].canonical_name
+ 209:     return f"{src} -> {dst}"
+ 210: 
+ 211: 
+ 212: def make_superedge_display_name(se: SuperEdge) -> str:
+ 213:     if len(se.relation_types) == 1:
+ 214:         return next(iter(se.relation_types)).value.replace("Relation", "")
+ 215:     return "Multiple Signals"
  216: 
- 217:             while stack:
- 218:                 cur = stack.pop()
- 219:                 if cur in visited or cur not in merge_candidates:
- 220:                     continue
- 221: 
- 222:                 visited.add(cur)
- 223:                 component.add(cur)
- 224: 
- 225:                 for nb in self._neighbors_1hop(cur):
- 226:                     stack.append(nb)
+ 217: 
+ 218: def supernode_signature(
+ 219:     view: GraphViewType,
+ 220:     super_class: SuperClass,
+ 221:     member_node_ids: set[str],
+ 222:     policy_version: str = "v1",
+ 223: ) -> str:
+ 224:     nodes_part = ",".join(sorted(member_node_ids))
+ 225:     return "|".join([view.value, super_class.value, policy_version, nodes_part])
+ 226: 
  227: 
- 228:             if not component:
- 229:                 continue
- 230: 
- 231:             sn_id = make_supernode_id(
- 232:                 view=self.view,
- 233:                 super_class=SuperClass.COMB_CLOUD,
- 234:                 member_node_ids=component,
- 235:                 policy_version="v1",
- 236:             )
+ 228: def make_supernode_id(
+ 229:     view: GraphViewType,
+ 230:     super_class: SuperClass,
+ 231:     member_node_ids: set[str],
+ 232:     policy_version: str = "v1",
+ 233: ) -> str:
+ 234:     sig = supernode_signature(view, super_class, member_node_ids, policy_version)
+ 235:     h = stable_hash(sig)
+ 236:     return f"SN_{view.value}_{super_class.value}_{h}"
  237: 
- 238:             sn = SuperNode(
- 239:                 node_id=sn_id,
- 240:                 super_class=SuperClass.COMB_CLOUD,
- 241:                 member_nodes=component,
- 242:                 member_edges=set(),
- 243:             )
- 244:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
- 245:             sn.display_name = make_supernode_display_name(sn)
- 246: 
- 247:             self.super_nodes[sn.node_id] = sn
- 248:             for n in component:
- 249:                 self.node_to_super[n] = sn.node_id
- 250: 
- 251:     def cycle2_5_eliminate(self) -> None:
- 252:         for nid, n in self.nodes.items():
- 253:             if nid in self.node_to_super:
- 254:                 continue
- 255: 
- 256:             if VIEW_POLICY[self.view].get(n.entity_class) != NodeAction.ELIMINATE:
- 257:                 raise RuntimeError(f"Unassigned node in view {self.view}: {nid}")
+ 238: 
+ 239: def superedge_signature(
+ 240:     src_sn: str,
+ 241:     dst_sn: str,
+ 242:     member_edge_ids: set[str],
+ 243:     policy_version: str = "v1",
+ 244: ) -> str:
+ 245:     edges_part = ",".join(sorted(member_edge_ids))
+ 246:     return "|".join([src_sn, dst_sn, policy_version, edges_part])
+ 247: 
+ 248: 
+ 249: def make_superedge_id(
+ 250:     src_sn: str,
+ 251:     dst_sn: str,
+ 252:     member_edge_ids: set[str],
+ 253:     policy_version: str = "v1",
+ 254: ) -> str:
+ 255:     sig = superedge_signature(src_sn, dst_sn, member_edge_ids, policy_version)
+ 256:     h = stable_hash(sig)
+ 257:     return f"SE_{h}"
  258: 
- 259:             sn = SuperNode(
- 260:                 node_id=make_supernode_id(
- 261:                     view=self.view,
- 262:                     super_class=SuperClass.ELIMINATED,
- 263:                     member_node_ids={nid},
- 264:                     policy_version="v1",
- 265:                 ),
- 266:                 super_class=SuperClass.ELIMINATED,
- 267:                 member_nodes={nid},
- 268:                 member_edges=set(),
- 269:             )
- 270:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
- 271:             sn.display_name = make_supernode_display_name(sn)
- 272: 
- 273:             self.super_nodes[sn.node_id] = sn
- 274:             self.node_to_super[nid] = sn.node_id
- 275: 
- 276:     def cycle3_rewrite_edges(self) -> None:
- 277:         for e in self.edges.values():
- 278:             src_sn = self.node_to_super[e.src_node]
- 279:             dst_sn = self.node_to_super[e.dst_node]
- 280: 
- 281:             if src_sn == dst_sn:
- 282:                 self.super_nodes[src_sn].member_edges.add(e.edge_id)
- 283:                 continue
- 284: 
- 285:             key = (src_sn, dst_sn)
- 286:             if key not in self.super_edges:
- 287:                 self.super_edges[key] = SuperEdge(
- 288:                     edge_id=make_superedge_id(src_sn, dst_sn, set()),
- 289:                     src_node=src_sn,
- 290:                     dst_node=dst_sn,
- 291:                     member_edges=set(),
- 292:                     member_nodes=set(),
- 293:                     relation_types=set(),
- 294:                     flow_types=set(),
- 295:                     provenances=[],
- 296:                 )
- 297:                 self.super_edges[key].canonical_name = make_superedge_canonical_name(
- 298:                     self.super_edges[key],
- 299:                     self.super_nodes,
- 300:                 )
- 301:                 self.super_edges[key].display_name = make_superedge_display_name(
- 302:                     self.super_edges[key],
- 303:                 )
- 304: 
- 305:             se = self.super_edges[key]
- 306:             se.member_edges.add(e.edge_id)
- 307:             se.member_nodes.update({e.src_node, e.dst_node})
- 308:             se.relation_types.add(e.relation_type)
- 309:             se.flow_types.add(e.flow_type)
- 310:             se.provenances.extend(e.provenances)
- 311: 
- 312:     def build(self) -> SuperGraph:
- 313:         self.cycle1_promote()
- 314:         self.cycle2_merge()
- 315:         self.cycle2_5_eliminate()
- 316:         self.cycle3_rewrite_edges()
- 317: 
- 318:         return SuperGraph(
- 319:             super_nodes=self.super_nodes,
- 320:             super_edges=self.super_edges,
- 321:             node_to_super=self.node_to_super,
- 322:         )
+ 259: @dataclass(frozen=True)
+ 260: class NodePolicy:
+ 261:     action: NodeAction
+ 262:     super_class: Optional[SuperClass]  # PROMOTE면 None 가능
+ 263: 
+ 264: POLICY_MAP: dict[GraphViewType, dict[EntityClass, NodePolicy]] = {
+ 265: 
+ 266:     GraphViewType.Structural: {
+ 267:         EntityClass.MODULE_INSTANCE: NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 268:         EntityClass.IO_PORT:        NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 269: 
+ 270:         EntityClass.RTL_BLOCK:      NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 271:         EntityClass.FSM:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 272:         EntityClass.FLIP_FLOP:      NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 273:         EntityClass.LUT:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 274:         EntityClass.MUX:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 275:         EntityClass.DSP:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 276:         EntityClass.BRAM:           NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+ 277: 
+ 278:         EntityClass.PACKAGE_PIN:    NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 279:         EntityClass.PBLOCK:         NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 280:         EntityClass.BOARD_CONNECTOR:NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 281:     },
+ 282: 
+ 283:     GraphViewType.Connectivity: {
+ 284:         EntityClass.FLIP_FLOP:      NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 285:         EntityClass.DSP:            NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 286:         EntityClass.BRAM:           NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 287:         EntityClass.IO_PORT:        NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 288: 
+ 289:         EntityClass.RTL_BLOCK:      NodePolicy(NodeAction.MERGE, SuperClass.COMB_CLOUD),
+ 290:         EntityClass.FSM:            NodePolicy(NodeAction.MERGE, SuperClass.COMB_CLOUD),
+ 291:         EntityClass.LUT:            NodePolicy(NodeAction.MERGE, SuperClass.COMB_CLOUD),
+ 292:         EntityClass.MUX:            NodePolicy(NodeAction.MERGE, SuperClass.COMB_CLOUD),
+ 293: 
+ 294:         EntityClass.MODULE_INSTANCE:NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 295:         EntityClass.PACKAGE_PIN:    NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 296:         EntityClass.PBLOCK:         NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 297:         EntityClass.BOARD_CONNECTOR:NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+ 298:     },
+ 299: 
+ 300:     GraphViewType.Physical: {
+ 301:         EntityClass.IO_PORT:        NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 302:         EntityClass.PACKAGE_PIN:    NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 303:         EntityClass.PBLOCK:         NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 304:         EntityClass.BOARD_CONNECTOR:NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+ 305: 
+ 306:         EntityClass.DSP:            NodePolicy(NodeAction.MERGE, SuperClass.CONSTRAINT_GROUP),
+ 307:         EntityClass.BRAM:           NodePolicy(NodeAction.MERGE, SuperClass.CONSTRAINT_GROUP),
+ 308: 
+ 309:         # 나머지는 전부 제거
+ 310:     },
+ 311: }
+ 312: 
+ 313: 
+ 314: 
+ 315: def get_node_policy(node: DKGNode, view: GraphViewType) -> NodePolicy:
+ 316:     return POLICY_MAP[view].get(
+ 317:         node.entity_class,
+ 318:         NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED)
+ 319:     )
+ 320: 
+ 321: 
+ 322: class ViewBuilder:
+ 323:     def __init__(self, nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge], view: GraphViewType):
+ 324:         self.nodes = nodes
+ 325:         self.edges = edges
+ 326:         self.view = view
+ 327: 
+ 328:         self.node_to_super: Dict[str, str] = {}
+ 329:         self.super_nodes: Dict[str, SuperNode] = {}
+ 330:         self.super_edges: Dict[Tuple[str, str], SuperEdge] = {}
+ 331: 
+ 332:     def _neighbors_1hop(self, nid: str) -> Set[str]:
+ 333:         n = self.nodes[nid]
+ 334:         nbrs = set()
+ 335:         for eid in n.in_edges + n.out_edges:
+ 336:             e = self.edges[eid]
+ 337:             nbrs.add(e.src_node)
+ 338:             nbrs.add(e.dst_node)
+ 339:         return nbrs
+ 340: 
+ 341:     def cycle1_promote(self) -> None:
+ 342:         for n in self.nodes.values():
+ 343:             node_policy = get_node_policy(n, self.view)
+ 344:             if node_policy.action != NodeAction.PROMOTE:
+ 345:                 continue
+ 346:             if node_policy.super_class is None:
+ 347:                 continue
+ 348: 
+ 349:             sn = SuperNode(
+ 350:                 node_id=f"SN_{n.node_id}",
+ 351:                 super_class=node_policy.super_class,
+ 352:                 member_nodes={n.node_id},
+ 353:                 member_edges=set(),
+ 354:                 provenances=list(n.provenances),
+ 355:             )
+ 356:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+ 357:             sn.display_name = make_supernode_display_name(sn)
+ 358:             self.super_nodes[sn.node_id] = sn
+ 359:             self.node_to_super[n.node_id] = sn.node_id
+ 360: 
+ 361:     def cycle2_merge(self) -> None:
+ 362:         # 각 노드가 머지될 super_class 결정
+ 363:         node_merge_class: Dict[str, SuperClass] = {}
+ 364:         for nid, n in self.nodes.items():
+ 365:             node_policy = get_node_policy(n, self.view)
+ 366:             if node_policy.action == NodeAction.MERGE and node_policy.super_class is not None:
+ 367:                 node_merge_class[nid] = node_policy.super_class
+ 368:         
+ 369:         merge_candidates = set(node_merge_class.keys())
+ 370:         visited: Set[str] = set()
+ 371: 
+ 372:         for nid in merge_candidates:
+ 373:             if nid in visited:
+ 374:                 continue
+ 375: 
+ 376:             target_class = node_merge_class[nid]
+ 377:             stack = [nid]
+ 378:             component: Set[str] = set()
+ 379: 
+ 380:             while stack:
+ 381:                 cur = stack.pop()
+ 382:                 if cur in visited or cur not in merge_candidates:
+ 383:                     continue
+ 384:                 # 같은 super_class를 가진 노드만 처리
+ 385:                 if node_merge_class[cur] != target_class:
+ 386:                     continue
+ 387: 
+ 388:                 visited.add(cur)
+ 389:                 component.add(cur)
+ 390: 
+ 391:                 for nb in self._neighbors_1hop(cur):
+ 392:                     if nb in merge_candidates and node_merge_class.get(nb) == target_class:
+ 393:                         stack.append(nb)
+ 394: 
+ 395:             if not component:
+ 396:                 continue
+ 397: 
+ 398:             sn_id = make_supernode_id(
+ 399:                 view=self.view,
+ 400:                 super_class=target_class,
+ 401:                 member_node_ids=component,
+ 402:                 policy_version="v2",
+ 403:             )
+ 404: 
+ 405:             sn = SuperNode(
+ 406:                 node_id=sn_id,
+ 407:                 super_class=target_class,
+ 408:                 member_nodes=component,
+ 409:                 member_edges=set(),
+ 410:             )
+ 411:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+ 412:             sn.display_name = make_supernode_display_name(sn)
+ 413: 
+ 414:             self.super_nodes[sn.node_id] = sn
+ 415:             for n in component:
+ 416:                 self.node_to_super[n] = sn.node_id
+ 417: 
+ 418:     def cycle2_5_eliminate(self) -> None:
+ 419:         for nid, n in self.nodes.items():
+ 420:             if nid in self.node_to_super:
+ 421:                 continue
+ 422: 
+ 423:             node_policy = get_node_policy(n, self.view)
+ 424:             if node_policy.action != NodeAction.ELIMINATE:
+ 425:                 raise RuntimeError(f"Unassigned node in view {self.view}: {nid}")
+ 426: 
+ 427:             eliminate_class = node_policy.super_class if node_policy.super_class is not None else SuperClass.ELIMINATED
+ 428: 
+ 429:             sn = SuperNode(
+ 430:                 node_id=make_supernode_id(
+ 431:                     view=self.view,
+ 432:                     super_class=eliminate_class,
+ 433:                     member_node_ids={nid},
+ 434:                     policy_version="v1",
+ 435:                 ),
+ 436:                 super_class=eliminate_class,
+ 437:                 member_nodes={nid},
+ 438:                 member_edges=set(),
+ 439:             )
+ 440:             sn.canonical_name = make_supernode_canonical_name(sn, self.nodes)
+ 441:             sn.display_name = make_supernode_display_name(sn)
+ 442: 
+ 443:             self.super_nodes[sn.node_id] = sn
+ 444:             self.node_to_super[nid] = sn.node_id
+ 445: 
+ 446:     def cycle3_rewrite_edges(self) -> None:
+ 447:         for e in self.edges.values():
+ 448:             src_sn = self.node_to_super[e.src_node]
+ 449:             dst_sn = self.node_to_super[e.dst_node]
+ 450: 
+ 451:             if src_sn == dst_sn:
+ 452:                 self.super_nodes[src_sn].member_edges.add(e.edge_id)
+ 453:                 continue
+ 454: 
+ 455:             key = (src_sn, dst_sn)
+ 456:             if key not in self.super_edges:
+ 457:                 self.super_edges[key] = SuperEdge(
+ 458:                     edge_id=make_superedge_id(src_sn, dst_sn, set()),
+ 459:                     src_node=src_sn,
+ 460:                     dst_node=dst_sn,
+ 461:                     member_edges=set(),
+ 462:                     member_nodes=set(),
+ 463:                     relation_types=set(),
+ 464:                     flow_types=set(),
+ 465:                     provenances=[],
+ 466:                 )
+ 467:                 self.super_edges[key].canonical_name = make_superedge_canonical_name(
+ 468:                     self.super_edges[key],
+ 469:                     self.super_nodes,
+ 470:                 )
+ 471:                 self.super_edges[key].display_name = make_superedge_display_name(
+ 472:                     self.super_edges[key],
+ 473:                 )
+ 474: 
+ 475:             se = self.super_edges[key]
+ 476:             se.member_edges.add(e.edge_id)
+ 477:             se.member_nodes.update({e.src_node, e.dst_node})
+ 478:             se.relation_types.add(e.relation_type)
+ 479:             se.flow_types.add(e.flow_type)
+ 480:             se.provenances.extend(e.provenances)
+ 481: 
+ 482:     def build(self) -> SuperGraph:
+ 483:         self.cycle1_promote()
+ 484:         self.cycle2_merge()
+ 485:         self.cycle2_5_eliminate()
+ 486:         self.cycle3_rewrite_edges()
+ 487: 
+ 488:         return SuperGraph(
+ 489:             super_nodes=self.super_nodes,
+ 490:             super_edges=self.super_edges,
+ 491:             node_to_super=self.node_to_super,
+ 492:         )
+ 493: 
+ 494: 
+ 495: # ============================================================================
+ 496: # Analysis Attachment Helper Functions
+ 497: # ============================================================================
+ 498: # Analysis는 구조 로직에서 직접 참조하지 않으며, 결과의 귀속 대상으로만 사용됩니다.
+ 499: # ============================================================================
+ 500: 
+ 501: def attach_timing_analysis_to_supernode(
+ 502:     sn: SuperNode,
+ 503:     metrics: TimingNodeMetrics
+ 504: ) -> None:
+ 505:     """
+ 506:     SuperNode에 Timing Analysis 결과를 부착합니다.
+ 507:     
+ 508:     원칙:
+ 509:     - 구조 변경 없음
+ 510:     - 기존 analysis["timing"]은 전체 교체됨 (immutable snapshot)
+ 511:     - 구조 로직은 이 함수를 호출하지 않음
+ 512:     """
+ 513:     sn.analysis[AnalysisKind.TIMING] = metrics
+ 514: 
+ 515: 
+ 516: def attach_timing_analysis_to_superedge(
+ 517:     se: SuperEdge,
+ 518:     metrics: TimingEdgeMetrics
+ 519: ) -> None:
+ 520:     """
+ 521:     SuperEdge에 Timing Analysis 결과를 부착합니다.
+ 522:     
+ 523:     원칙:
+ 524:     - 구조 변경 없음
+ 525:     - 기존 analysis["timing"]은 전체 교체됨 (immutable snapshot)
+ 526:     - 구조 로직은 이 함수를 호출하지 않음
+ 527:     """
+ 528:     se.analysis[AnalysisKind.TIMING] = metrics
+ 529: 
+ 530: 
+ 531: def get_timing_analysis_from_supernode(
+ 532:     sn: SuperNode
+ 533: ) -> Optional[TimingNodeMetrics]:
+ 534:     """
+ 535:     SuperNode에서 Timing Analysis 결과를 조회합니다.
+ 536:     
+ 537:     Returns:
+ 538:         TimingNodeMetrics or None if not attached
+ 539:     """
+ 540:     return sn.analysis.get(AnalysisKind.TIMING)
+ 541: 
+ 542: 
+ 543: def get_timing_analysis_from_superedge(
+ 544:     se: SuperEdge
+ 545: ) -> Optional[TimingEdgeMetrics]:
+ 546:     """
+ 547:     SuperEdge에서 Timing Analysis 결과를 조회합니다.
+ 548:     
+ 549:     Returns:
+ 550:         TimingEdgeMetrics or None if not attached
+ 551:     """
+ 552:     return se.analysis.get(AnalysisKind.TIMING)
+ 553: 
+ 554: 
+ 555: # ============================================================================
+ 556: # 향후 확장 예시 (Area / Power Analysis)
+ 557: # ============================================================================
+ 558: # 동일한 패턴으로 확장 가능:
+ 559: #
+ 560: # @dataclass(frozen=True)
+ 561: # class AreaMetrics:
+ 562: #     area_density: float
+ 563: #     area_utilization: float
+ 564: #     area_total: float
+ 565: #
+ 566: # @dataclass(frozen=True)
+ 567: # class PowerMetrics:
+ 568: #     power_peak: float
+ 569: #     power_average: float
+ 570: #     power_leakage: float
+ 571: #
+ 572: # def attach_area_analysis_to_supernode(sn: SuperNode, metrics: AreaMetrics) -> None:
+ 573: #     sn.analysis[AnalysisKind.AREA] = metrics
+ 574: #
+ 575: # def attach_power_analysis_to_supernode(sn: SuperNode, metrics: PowerMetrics) -> None:
+ 576: #     sn.analysis[AnalysisKind.POWER] = metrics
+ 577: #
+ 578: # 사용 예시:
+ 579: #     supernode.analysis[AnalysisKind.TIMING]  -> TimingNodeMetrics
+ 580: #     supernode.analysis[AnalysisKind.AREA]    -> AreaMetrics
+ 581: #     supernode.analysis[AnalysisKind.POWER]   -> PowerMetrics
+ 582: # ============================================================================
 
 
-================================================================================
+
 FILE: dkg\utils.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: import hashlib
@@ -2010,11 +3646,24 @@ FILE: dkg\utils.py
   59: 
   60: def stable_hash(s: str, length: int = 12) -> str:
   61:     return hashlib.sha1(s.encode()).hexdigest()[:length]
+  62: 
+  63: 
+  64: def compute_file_hash(filepath: str | Path) -> str:
+  65:     """파일 내용의 SHA-256 해시 계산"""
+  66:     filepath = Path(filepath)
+  67:     if not filepath.exists():
+  68:         raise FileNotFoundError(f"File not found: {filepath}")
+  69:     
+  70:     sha256 = hashlib.sha256()
+  71:     with open(filepath, "rb") as f:
+  72:         for chunk in iter(lambda: f.read(8192), b""):
+  73:             sha256.update(chunk)
+  74:     return sha256.hexdigest()[:16]  # 처음 16자만 사용
 
 
-================================================================================
+
 FILE: dkg\yosys_parser.py
-================================================================================
+
    1: from __future__ import annotations
    2: 
    3: import glob

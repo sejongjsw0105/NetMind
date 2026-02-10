@@ -1,0 +1,81 @@
+📌 Technical Memo
+Why There Is No TimingView
+1. 결론
+
+Timing은 그래프 구조를 바꾸는 View가 아니라,
+그래프 위에 결과를 얹는 Analysis Capability로 취급한다.
+따라서 TimingView는 설계상 존재하지 않는다.
+
+2. Timing이 View가 될 수 없는 이유
+2.1 View의 정의와 Timing의 불일치
+
+View는 node/edge의 병합·제거·승격을 통해
+그래프 구조를 변형한다.
+
+Timing은 구조를 변형하지 않으며,
+path 기반 계산 결과를 기존 구조에 귀속시킨다.
+
+→ Timing은 graph transformer가 아니라 annotator다.
+
+2.2 Slack의 본질적 문제
+
+Slack은 node/edge의 고유 속성이 아니라
+path 선택 결과의 projection이다.
+
+연속값이며 컨텍스트(클럭, 제약)에 의존한다.
+
+Slack을 기준으로 SuperNode / SuperEdge를 만들면
+정보 손실 또는 거짓 단언이 발생한다.
+
+2.3 SuperEdge가 slack을 “결정”할 수 없는 이유
+
+Slack은 min-over-paths 결과다.
+
+가장 느린 edge가 critical path에 포함되지 않을 수 있다.
+
+SuperEdge는 path membership 정보를 보존하지 않는다.
+
+→ SuperEdge는 delay 분포는 말할 수 있으나,
+slack에 대한 인과적 단언은 할 수 없다.
+
+3. 대안: Timing as Analysis Capability
+
+Timing은 다음과 같은 형태로 모델링된다:
+
+Base / Super graph 구조는 유지
+
+Node / Edge / SuperNode / SuperEdge에
+집계 가능한 timing metric만 attach
+
+판단·사건·경로 정보는 그래프 외부 객체로 분리
+
+Graph
+ └─ timing_metrics (aggregated)
+
+TimingAnalysisResult (external)
+ ├─ alerts
+ ├─ summary
+ └─ (optional) path digests
+
+4. Super 객체가 가질 수 있는 Timing 정보의 한계
+
+허용: min_slack, p5_slack, max_arrival, max_delay, 분포 통계
+
+금지: “critical path”, “slack을 결정한다” 같은 단언
+
+Timing 정보는 요약·위험 지표로만 사용한다.
+
+5. 설계적 효과
+
+DKG–Super 구조의 일관성 유지
+
+Path 기반 이질성 격리
+
+Area / Power 분석으로 자연 확장 가능
+
+Query / UI / Alert 계층과 명확히 분리
+
+6. 요약 문장
+
+Timing은 View가 아니라 Capability다.
+그래프는 그대로 두고, 의미만 얹는다.

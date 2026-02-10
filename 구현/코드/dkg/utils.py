@@ -59,3 +59,16 @@ def split_signal_bit(sig: str) -> Tuple[str, Optional[int]]:
 
 def stable_hash(s: str, length: int = 12) -> str:
     return hashlib.sha1(s.encode()).hexdigest()[:length]
+
+
+def compute_file_hash(filepath: str | Path) -> str:
+    """파일 내용의 SHA-256 해시 계산"""
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise FileNotFoundError(f"File not found: {filepath}")
+    
+    sha256 = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()[:16]  # 처음 16자만 사용
