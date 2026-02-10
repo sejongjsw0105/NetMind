@@ -230,167 +230,195 @@ FILE: dkg\debug.py
 ================================================================================
 FILE: dkg\graph.py
 ================================================================================
-   1: from __future__ import annotations
-   2: 
-   3: from dataclasses import dataclass, field
-   4: from enum import Enum
-   5: from typing import Any, Dict, List, Optional, Tuple
-   6: 
-   7: from .provenance import Provenance
-   8: 
-   9: 
-  10: class EntityClass(str, Enum):
-  11:     MODULE_INSTANCE = "ModuleInstance"
-  12:     RTL_BLOCK = "RTLBlock"
-  13:     FSM = "FSM"
+   1: # NOTE:
+   2: # canonical_name is a human-readable debug label.
+   3: # It is intended for debugging, tracing, and debug-like queries only.
+   4: # It is NOT guaranteed to be stable across views, abstractions, or builds,
+   5: # and MUST NOT be used as a persistent identifier, cache key, or external reference.
+   6: from __future__ import annotations
+   7: 
+   8: from dataclasses import dataclass, field
+   9: from enum import Enum
+  10: from typing import Any, Dict, List, Optional, Tuple
+  11: 
+  12: from .provenance import Provenance
+  13: 
   14: 
-  15:     FLIP_FLOP = "FlipFlop"
-  16:     LUT = "LUT"
-  17:     MUX = "MUX"
-  18:     DSP = "DSP"
-  19:     BRAM = "BRAM"
-  20: 
-  21:     IO_PORT = "IOPort"
-  22:     PACKAGE_PIN = "PackagePin"
-  23:     PBLOCK = "Pblock"
-  24:     BOARD_CONNECTOR = "BoardConnector"
+  15: class EntityClass(str, Enum):
+  16:     MODULE_INSTANCE = "ModuleInstance"
+  17:     RTL_BLOCK = "RTLBlock"
+  18:     FSM = "FSM"
+  19: 
+  20:     FLIP_FLOP = "FlipFlop"
+  21:     LUT = "LUT"
+  22:     MUX = "MUX"
+  23:     DSP = "DSP"
+  24:     BRAM = "BRAM"
   25: 
-  26: 
-  27: class RelationType(str, Enum):
-  28:     DATA = "DataRelation"
-  29:     CLOCK = "ClockRelation"
-  30:     RESET = "ResetRelation"
-  31:     PARAMETER = "ParameterRelation"
-  32:     CONSTRAINT = "ConstraintRelation"
-  33:     PHYSICAL_MAP = "PhysicalMappingRelation"
-  34: 
-  35: 
-  36: class EdgeFlowType(str, Enum):
-  37:     COMBINATIONAL = "combinational"
-  38:     SEQ_LAUNCH = "sequential_launch"
-  39:     SEQ_CAPTURE = "sequential_capture"
-  40:     CLOCK_TREE = "clock_tree"
-  41:     ASYNC_RESET = "async_reset"
-  42: 
-  43: 
-  44: @dataclass
-  45: class DKGNode:
-  46:     node_id: str
-  47:     entity_class: EntityClass
-  48:     hier_path: str
-  49:     local_name: str
-  50:     canonical_name: Optional[str] = None
-  51: 
-  52:     display_name: Optional[str] = None
-  53:     short_alias: Optional[str] = None
-  54: 
-  55:     parameters: Dict[str, str] = field(default_factory=dict)
-  56:     attributes: Dict[str, str] = field(default_factory=dict)
+  26:     IO_PORT = "IOPort"
+  27:     PACKAGE_PIN = "PackagePin"
+  28:     PBLOCK = "Pblock"
+  29:     BOARD_CONNECTOR = "BoardConnector"
+  30: 
+  31: 
+  32: class RelationType(str, Enum):
+  33:     DATA = "DataRelation"
+  34:     CLOCK = "ClockRelation"
+  35:     RESET = "ResetRelation"
+  36:     PARAMETER = "ParameterRelation"
+  37:     CONSTRAINT = "ConstraintRelation"
+  38:     PHYSICAL_MAP = "PhysicalMappingRelation"
+  39: 
+  40: 
+  41: class EdgeFlowType(str, Enum):
+  42:     COMBINATIONAL = "combinational"
+  43:     SEQ_LAUNCH = "sequential_launch"
+  44:     SEQ_CAPTURE = "sequential_capture"
+  45:     CLOCK_TREE = "clock_tree"
+  46:     ASYNC_RESET = "async_reset"
+  47: 
+  48: 
+  49: @dataclass
+  50: class DKGNode:
+  51:     # 핵심 식별자 (영구적, 안정적)
+  52:     node_id: str
+  53:     entity_class: EntityClass
+  54:     hier_path: str
+  55:     local_name: str
+  56:     canonical_name: Optional[str] = None
   57: 
-  58:     clock_domain: Optional[str] = None
-  59:     arrival_time: Optional[float] = None
-  60:     required_time: Optional[float] = None
-  61:     slack: Optional[float] = None
-  62: 
-  63:     in_edges: List[str] = field(default_factory=list)
-  64:     out_edges: List[str] = field(default_factory=list)
-  65: 
-  66:     provenances: List[Provenance] = field(default_factory=list)
-  67:     primary_provenance: Optional[Provenance] = None
-  68: 
+  58:     # 메타데이터
+  59:     parameters: Dict[str, str] = field(default_factory=dict)
+  60:     attributes: Dict[str, str] = field(default_factory=dict)
+  61: 
+  62:     clock_domain: Optional[str] = None
+  63:     arrival_time: Optional[float] = None
+  64:     required_time: Optional[float] = None
+  65:     slack: Optional[float] = None
+  66: 
+  67:     in_edges: List[str] = field(default_factory=list)
+  68:     out_edges: List[str] = field(default_factory=list)
   69: 
-  70: @dataclass
-  71: class DKGEdge:
-  72:     edge_id: str
-  73:     src_node: str
-  74:     dst_node: str
-  75: 
-  76:     relation_type: RelationType
-  77:     flow_type: EdgeFlowType
-  78: 
-  79:     signal_name: str
-  80:     canonical_name: str
-  81:     bit_range: Optional[Tuple[int, int]] = None
-  82:     net_id: Optional[str] = None
-  83: 
-  84:     driver_type: Optional[str] = None
-  85:     fanout_count: Optional[int] = None
-  86: 
-  87:     clock_signal: Optional[str] = None
-  88:     reset_signal: Optional[str] = None
-  89:     clock_domain_id: Optional[str] = None
+  70:     provenances: List[Provenance] = field(default_factory=list)
+  71:     primary_provenance: Optional[Provenance] = None
+  72: 
+  73: 
+  74: @dataclass
+  75: class DKGEdge:
+  76:     edge_id: str
+  77:     src_node: str
+  78:     dst_node: str
+  79: 
+  80:     relation_type: RelationType
+  81:     flow_type: EdgeFlowType
+  82: 
+  83:     signal_name: str
+  84:     canonical_name: str
+  85:     bit_range: Optional[Tuple[int, int]] = None
+  86:     net_id: Optional[str] = None
+  87: 
+  88:     driver_type: Optional[str] = None
+  89:     fanout_count: Optional[int] = None
   90: 
-  91:     timing_exception: Optional[str] = None
-  92:     parameters: Dict[str, Any] = field(default_factory=dict)
-  93: 
-  94:     delay: Optional[float] = None
-  95:     arrival_time: Optional[float] = None
-  96:     required_time: Optional[float] = None
-  97:     slack: Optional[float] = None
-  98: 
-  99:     attributes: Dict[str, Any] = field(default_factory=dict)
- 100: 
- 101:     provenances: List[Provenance] = field(default_factory=list)
- 102:     primary_provenance: Optional[Provenance] = None
- 103: 
+  91:     clock_signal: Optional[str] = None
+  92:     reset_signal: Optional[str] = None
+  93:     clock_domain_id: Optional[str] = None
+  94: 
+  95:     timing_exception: Optional[str] = None
+  96:     parameters: Dict[str, Any] = field(default_factory=dict)
+  97: 
+  98:     delay: Optional[float] = None
+  99:     arrival_time: Optional[float] = None
+ 100:     required_time: Optional[float] = None
+ 101:     slack: Optional[float] = None
+ 102: 
+ 103:     attributes: Dict[str, Any] = field(default_factory=dict)
  104: 
- 105: def make_node_canonical_name(node: DKGNode) -> str:
- 106:     base = node.hier_path
+ 105:     provenances: List[Provenance] = field(default_factory=list)
+ 106:     primary_provenance: Optional[Provenance] = None
  107: 
- 108:     cls = node.entity_class
- 109:     if cls == EntityClass.FLIP_FLOP:
- 110:         suffix = f"reg_{node.local_name}"
- 111:     elif cls == EntityClass.MUX:
- 112:         suffix = "mux"
- 113:     elif cls == EntityClass.LUT:
- 114:         suffix = "comb"
- 115:     elif cls == EntityClass.BRAM:
- 116:         suffix = "bram"
- 117:     elif cls == EntityClass.DSP:
- 118:         suffix = "dsp"
- 119:     elif cls == EntityClass.IO_PORT:
- 120:         suffix = f"port_{node.local_name}"
- 121:     else:
- 122:         suffix = node.local_name or cls.value.lower()
- 123: 
- 124:     return f"{base}.{suffix}"
- 125: 
- 126: 
- 127: def make_node_display_name(node: DKGNode) -> str:
- 128:     if node.entity_class == EntityClass.FLIP_FLOP:
- 129:         return f"Reg {node.local_name}"
- 130:     if node.entity_class == EntityClass.BRAM:
- 131:         return "BRAM"
- 132:     if node.entity_class == EntityClass.MUX:
- 133:         return "MUX"
- 134:     if node.entity_class == EntityClass.LUT:
- 135:         return "Logic"
- 136:     if node.entity_class == EntityClass.DSP:
- 137:         return "DSP"
- 138:     if node.entity_class == EntityClass.IO_PORT:
- 139:         return f"Port {node.local_name}"
- 140: 
- 141:     return node.local_name or node.entity_class.value
- 142: 
- 143: 
- 144: def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:
- 145:     src = nodes[e.src_node].canonical_name
- 146:     dst = nodes[e.dst_node].canonical_name
- 147: 
- 148:     if e.bit_range:
- 149:         msb, lsb = e.bit_range
- 150:         sig = f"{e.signal_name}[{msb}:{lsb}]"
- 151:     else:
- 152:         sig = e.signal_name
- 153: 
- 154:     return f"{src} -> {dst} : {sig}"
- 155: 
- 156: 
- 157: def make_edge_display_name(e: DKGEdge) -> str:
- 158:     if e.bit_range:
- 159:         msb, lsb = e.bit_range
- 160:         return f"{e.signal_name}[{msb}:{lsb}]"
- 161:     return e.signal_name
+ 108: 
+ 109: def make_node_canonical_name(node: DKGNode) -> str:
+ 110:     base = node.hier_path
+ 111: 
+ 112:     cls = node.entity_class
+ 113:     if cls == EntityClass.FLIP_FLOP:
+ 114:         suffix = f"reg_{node.local_name}"
+ 115:     elif cls == EntityClass.MUX:
+ 116:         suffix = "mux"
+ 117:     elif cls == EntityClass.LUT:
+ 118:         suffix = "comb"
+ 119:     elif cls == EntityClass.BRAM:
+ 120:         suffix = "bram"
+ 121:     elif cls == EntityClass.DSP:
+ 122:         suffix = "dsp"
+ 123:     elif cls == EntityClass.IO_PORT:
+ 124:         suffix = f"port_{node.local_name}"
+ 125:     else:
+ 126:         suffix = node.local_name or cls.value.lower()
+ 127: 
+ 128:     return f"{base}.{suffix}"
+ 129: 
+ 130: 
+ 131: def make_node_display_name(node: DKGNode, lang: str = "en") -> str:
+ 132:     """
+ 133:     노드의 디스플레이 이름 생성 (UI용).
+ 134:     
+ 135:     Args:
+ 136:         node: DKGNode 인스턴스
+ 137:         lang: 언어 ('en', 'ko' 등)
+ 138:     
+ 139:     Returns:
+ 140:         사람이 읽기 좋은 이름
+ 141:     
+ 142:     Note:
+ 143:         DKG 데이터 모델 자체에 저장되지 않음.
+ 144:         필요할 때만 on-demand로 생성 (presentation layer 책임).
+ 145:     """
+ 146:     display_map = {
+ 147:         'en': {
+ 148:             EntityClass.FLIP_FLOP: f"Reg {node.local_name}",
+ 149:             EntityClass.BRAM: "BRAM",
+ 150:             EntityClass.MUX: "MUX",
+ 151:             EntityClass.LUT: "Logic",
+ 152:             EntityClass.DSP: "DSP",
+ 153:             EntityClass.IO_PORT: f"Port {node.local_name}",
+ 154:         },
+ 155:         'ko': {
+ 156:             EntityClass.FLIP_FLOP: f"레지스터 {node.local_name}",
+ 157:             EntityClass.BRAM: "메모리",
+ 158:             EntityClass.MUX: "멀티플렉서",
+ 159:             EntityClass.LUT: "조합논리",
+ 160:             EntityClass.DSP: "디지털신호처리",
+ 161:             EntityClass.IO_PORT: f"포트 {node.local_name}",
+ 162:         },
+ 163:     }
+ 164:     
+ 165:     lang_map = display_map.get(lang, display_map['en'])
+ 166:     return lang_map.get(
+ 167:         node.entity_class,
+ 168:         node.local_name or node.entity_class.value
+ 169:     )
+ 170: 
+ 171: 
+ 172: def make_edge_canonical_name(e: DKGEdge, nodes: dict[str, DKGNode]) -> str:
+ 173:     src = nodes[e.src_node].canonical_name
+ 174:     dst = nodes[e.dst_node].canonical_name
+ 175: 
+ 176:     if e.bit_range:
+ 177:         msb, lsb = e.bit_range
+ 178:         sig = f"{e.signal_name}[{msb}:{lsb}]"
+ 179:     else:
+ 180:         sig = e.signal_name
+ 181: 
+ 182:     return f"{src} -> {dst} : {sig}"
+ 183: 
+ 184: 
+ 185: def make_edge_display_name(e: DKGEdge) -> str:
+ 186:     if e.bit_range:
+ 187:         msb, lsb = e.bit_range
+ 188:         return f"{e.signal_name}[{msb}:{lsb}]"
+ 189:     return e.signal_name
 
 
 ================================================================================
@@ -532,249 +560,316 @@ FILE: dkg\graph_build.py
  134:                     w.loads.append(node_id)
  135: 
  136: 
- 137: def detect_clock_reset_signals(
- 138:     nodes: Dict[str, DKGNode],
- 139:     edges: Dict[str, DKGEdge],
+ 137: def detect_clock_reset_from_ff_cells(
+ 138:     cells: List[CellIR],
+ 139:     wires: Dict[int, Wire],
  140: ) -> Tuple[set[str], set[str]]:
- 141:     clock_nets: set[str] = set()
- 142:     reset_nets: set[str] = set()
- 143: 
- 144:     for e in edges.values():
- 145:         if is_clock_name(e.signal_name):
- 146:             clock_nets.add(e.signal_name)
- 147:         if is_reset_name(e.signal_name):
- 148:             reset_nets.add(e.signal_name)
- 149: 
- 150:     for n in nodes.values():
- 151:         if n.entity_class != EntityClass.FLIP_FLOP:
- 152:             continue
- 153:         for eid in n.in_edges:
- 154:             e = edges[eid]
- 155:             if is_clock_name(e.signal_name):
- 156:                 clock_nets.add(e.signal_name)
- 157:             if is_reset_name(e.signal_name):
- 158:                 reset_nets.add(e.signal_name)
- 159: 
- 160:     return clock_nets, reset_nets
- 161: 
- 162: 
- 163: def assign_edge_flow_types(
- 164:     nodes: Dict[str, DKGNode],
- 165:     edges: Dict[str, DKGEdge],
- 166:     clock_nets: set[str],
- 167:     reset_nets: set[str],
- 168: ) -> None:
- 169:     for e in edges.values():
- 170:         if e.signal_name in clock_nets:
- 171:             e.flow_type = EdgeFlowType.CLOCK_TREE
- 172:             continue
- 173:         if e.signal_name in reset_nets:
- 174:             e.flow_type = EdgeFlowType.ASYNC_RESET
- 175:             continue
- 176: 
- 177:         src = nodes[e.src_node]
- 178:         dst = nodes[e.dst_node]
- 179: 
- 180:         if src.entity_class == EntityClass.FLIP_FLOP:
- 181:             e.flow_type = EdgeFlowType.SEQ_LAUNCH
- 182:         elif dst.entity_class == EntityClass.FLIP_FLOP:
- 183:             e.flow_type = EdgeFlowType.SEQ_CAPTURE
- 184:         else:
- 185:             e.flow_type = EdgeFlowType.COMBINATIONAL
- 186: 
- 187: 
- 188: def assign_clock_domains(
- 189:     nodes: Dict[str, DKGNode],
- 190:     edges: Dict[str, DKGEdge],
- 191:     clock_nets: set[str],
- 192: ) -> None:
- 193:     for n in nodes.values():
- 194:         if n.entity_class != EntityClass.FLIP_FLOP:
- 195:             continue
- 196:         for eid in n.in_edges:
- 197:             e = edges[eid]
- 198:             if e.signal_name in clock_nets:
- 199:                 n.clock_domain = e.signal_name
- 200:                 break
- 201: 
- 202: 
- 203: def merge_bit_edges_to_bus(edges: Dict[str, DKGEdge]) -> Dict[str, DKGEdge]:
- 204:     groups: Dict[Tuple[str, str, RelationType, EdgeFlowType, str], List[Tuple[Optional[int], DKGEdge]]] = defaultdict(list)
- 205: 
- 206:     for e in edges.values():
- 207:         base, bit = split_signal_bit(e.signal_name)
- 208:         key = (e.src_node, e.dst_node, e.relation_type, e.flow_type, base)
- 209:         groups[key].append((bit, e))
- 210: 
- 211:     new_edges: Dict[str, DKGEdge] = {}
- 212:     new_eid = 0
- 213: 
- 214:     for key, items in groups.items():
- 215:         _, _, _, _, base = key
- 216: 
- 217:         if all(bit is None for bit, _ in items):
- 218:             for _, e in items:
- 219:                 new_edges[e.edge_id] = e
- 220:             continue
- 221: 
- 222:         items.sort(key=lambda x: (-1 if x[0] is None else x[0]))
- 223: 
- 224:         current_bucket: List[Tuple[Optional[int], DKGEdge]] = []
- 225:         prev_bit: Optional[int] = None
- 226: 
- 227:         def flush_bucket(bucket: List[Tuple[Optional[int], DKGEdge]]) -> None:
- 228:             nonlocal new_eid
- 229:             if not bucket:
- 230:                 return
- 231: 
- 232:             bits = [b for b, _ in bucket if b is not None]
- 233:             edges_in_bucket = [e for _, e in bucket]
- 234: 
- 235:             if len(bits) <= 1:
- 236:                 e = edges_in_bucket[0]
- 237:                 new_edges[e.edge_id] = e
- 238:                 return
- 239: 
- 240:             msb = max(bits)
- 241:             lsb = min(bits)
- 242:             base_edge = edges_in_bucket[0]
- 243:             merged = DKGEdge(
- 244:                 edge_id=f"bus_e{new_eid}",
- 245:                 src_node=base_edge.src_node,
- 246:                 dst_node=base_edge.dst_node,
- 247:                 relation_type=base_edge.relation_type,
- 248:                 flow_type=base_edge.flow_type,
- 249:                 signal_name=f"{base}[{msb}:{lsb}]",
- 250:                 canonical_name=base_edge.canonical_name,
- 251:                 bit_range=(msb, lsb),
- 252:                 net_id=base_edge.net_id,
- 253:                 driver_type=base_edge.driver_type,
- 254:                 fanout_count=base_edge.fanout_count,
- 255:                 clock_signal=base_edge.clock_signal,
- 256:                 reset_signal=base_edge.reset_signal,
- 257:                 clock_domain_id=base_edge.clock_domain_id,
- 258:                 timing_exception=base_edge.timing_exception,
- 259:                 delay=base_edge.delay,
- 260:                 arrival_time=base_edge.arrival_time,
- 261:                 required_time=base_edge.required_time,
- 262:                 slack=base_edge.slack,
- 263:                 attributes=dict(base_edge.attributes),
- 264:                 provenances=[],
- 265:                 primary_provenance=None,
- 266:             )
- 267: 
- 268:             primary, provs = merge_provenances_edges(edges_in_bucket)
- 269:             merged.provenances = provs
- 270:             merged.primary_provenance = primary
- 271:             merged.attributes["merged_bits"] = sorted(bits)
+ 141:     """
+ 142:     Yosys FF cell 포트 정보에서 clock/reset 신호 직접 추출.
+ 143:     
+ 144:     구조적 분석을 통해 신뢰도 높은 식별:
+ 145:     - $dff, $adff, $sdff 등의 CLK 포트 → clock
+ 146:     - ARST, SRST 포트 → reset
+ 147:     """
+ 148:     clock_nets: set[str] = set()
+ 149:     reset_nets: set[str] = set()
+ 150:     
+ 151:     # FF cell 타입 정의
+ 152:     ff_cell_types = {
+ 153:         "$dff", "$adff", "$sdff",
+ 154:         "$dffe", "$sdffe", "$aldff", "$aldffe",
+ 155:     }
+ 156:     
+ 157:     for cell in cells:
+ 158:         if cell.type not in ff_cell_types:
+ 159:             continue
+ 160:         
+ 161:         # CLK 포트 찾기
+ 162:         if "CLK" in cell.connections:
+ 163:             clk_wids = cell.connections["CLK"]
+ 164:             for wid in clk_wids:
+ 165:                 w = get_wire(wires, wid)
+ 166:                 if w and w.name:
+ 167:                     clock_nets.add(w.name)
+ 168:         
+ 169:         # 비동기 리셋 포트 (ARST, ARST_N 등)
+ 170:         async_reset_ports = {"ARST", "ARST_N", "NRST", "NRESET"}
+ 171:         for port in async_reset_ports:
+ 172:             if port in cell.connections:
+ 173:                 rst_wids = cell.connections[port]
+ 174:                 for wid in rst_wids:
+ 175:                     w = get_wire(wires, wid)
+ 176:                     if w and w.name:
+ 177:                         reset_nets.add(w.name)
+ 178:         
+ 179:         # 동기 리셋 포트 (SRST, SRST_N 등)
+ 180:         sync_reset_ports = {"SRST", "SRST_N", "SR", "R", "RST"}
+ 181:         for port in sync_reset_ports:
+ 182:             if port in cell.connections:
+ 183:                 rst_wids = cell.connections[port]
+ 184:                 for wid in rst_wids:
+ 185:                     w = get_wire(wires, wid)
+ 186:                     if w and w.name:
+ 187:                         reset_nets.add(w.name)
+ 188:     
+ 189:     return clock_nets, reset_nets
+ 190: 
+ 191: 
+ 192: def detect_clock_reset_signals(
+ 193:     nodes: Dict[str, DKGNode],
+ 194:     edges: Dict[str, DKGEdge],
+ 195:     cells: List[CellIR],
+ 196:     wires: Dict[int, Wire],
+ 197: ) -> Tuple[set[str], set[str]]:
+ 198:     """
+ 199:     Clock/Reset 신호 식별 (다단계 우선순위).
+ 200:     
+ 201:     1️⃣ 구조적 분석: FF cell 포트 정보 (높은 신뢰도)
+ 202:     2️⃣ 신호 분석: edge의 flow 정보
+ 203:     3️⃣ 이름 기반 휴리스틱: 패턴 매칭 (낮은 신뢰도)
+ 204:     """
+ 205:     # Stage 1: 구조적 분석 (FF cell 포트)
+ 206:     clock_nets, reset_nets = detect_clock_reset_from_ff_cells(cells, wires)
+ 207:     
+ 208:     # Stage 2: 엣지 신호 이름 기반 (추론)
+ 209:     for e in edges.values():
+ 210:         if is_clock_name(e.signal_name):
+ 211:             clock_nets.add(e.signal_name)
+ 212:         if is_reset_name(e.signal_name):
+ 213:             reset_nets.add(e.signal_name)
+ 214:     
+ 215:     # Stage 3: FF 입력 신호 확인 (구조적 재검증)
+ 216:     for n in nodes.values():
+ 217:         if n.entity_class != EntityClass.FLIP_FLOP:
+ 218:             continue
+ 219:         for eid in n.in_edges:
+ 220:             e = edges[eid]
+ 221:             # 이미 식별된 것은 확인, 아니면 추가 확인
+ 222:             if is_clock_name(e.signal_name) and e.signal_name not in clock_nets:
+ 223:                 clock_nets.add(e.signal_name)
+ 224:             if is_reset_name(e.signal_name) and e.signal_name not in reset_nets:
+ 225:                 reset_nets.add(e.signal_name)
+ 226:     
+ 227:     return clock_nets, reset_nets
+ 228: 
+ 229: 
+ 230: def assign_edge_flow_types(
+ 231:     nodes: Dict[str, DKGNode],
+ 232:     edges: Dict[str, DKGEdge],
+ 233:     clock_nets: set[str],
+ 234:     reset_nets: set[str],
+ 235: ) -> None:
+ 236:     for e in edges.values():
+ 237:         if e.signal_name in clock_nets:
+ 238:             e.flow_type = EdgeFlowType.CLOCK_TREE
+ 239:             continue
+ 240:         if e.signal_name in reset_nets:
+ 241:             e.flow_type = EdgeFlowType.ASYNC_RESET
+ 242:             continue
+ 243: 
+ 244:         src = nodes[e.src_node]
+ 245:         dst = nodes[e.dst_node]
+ 246: 
+ 247:         if src.entity_class == EntityClass.FLIP_FLOP:
+ 248:             e.flow_type = EdgeFlowType.SEQ_LAUNCH
+ 249:         elif dst.entity_class == EntityClass.FLIP_FLOP:
+ 250:             e.flow_type = EdgeFlowType.SEQ_CAPTURE
+ 251:         else:
+ 252:             e.flow_type = EdgeFlowType.COMBINATIONAL
+ 253: 
+ 254: 
+ 255: def assign_clock_domains(
+ 256:     nodes: Dict[str, DKGNode],
+ 257:     edges: Dict[str, DKGEdge],
+ 258:     clock_nets: set[str],
+ 259: ) -> None:
+ 260:     for n in nodes.values():
+ 261:         if n.entity_class != EntityClass.FLIP_FLOP:
+ 262:             continue
+ 263:         for eid in n.in_edges:
+ 264:             e = edges[eid]
+ 265:             if e.signal_name in clock_nets:
+ 266:                 n.clock_domain = e.signal_name
+ 267:                 break
+ 268: 
+ 269: 
+ 270: def merge_bit_edges_to_bus(edges: Dict[str, DKGEdge]) -> Dict[str, DKGEdge]:
+ 271:     groups: Dict[Tuple[str, str, RelationType, EdgeFlowType, str], List[Tuple[Optional[int], DKGEdge]]] = defaultdict(list)
  272: 
- 273:             new_edges[merged.edge_id] = merged
- 274:             new_eid += 1
- 275: 
- 276:         for bit, e in items:
- 277:             if bit is None:
- 278:                 flush_bucket(current_bucket)
- 279:                 current_bucket = []
- 280:                 new_edges[e.edge_id] = e
- 281:                 prev_bit = None
- 282:                 continue
+ 273:     for e in edges.values():
+ 274:         base, bit = split_signal_bit(e.signal_name)
+ 275:         key = (e.src_node, e.dst_node, e.relation_type, e.flow_type, base)
+ 276:         groups[key].append((bit, e))
+ 277: 
+ 278:     new_edges: Dict[str, DKGEdge] = {}
+ 279:     new_eid = 0
+ 280: 
+ 281:     for key, items in groups.items():
+ 282:         _, _, _, _, base = key
  283: 
- 284:             if prev_bit is None or bit == prev_bit - 1:
- 285:                 current_bucket.append((bit, e))
- 286:             else:
- 287:                 flush_bucket(current_bucket)
- 288:                 current_bucket = [(bit, e)]
- 289: 
- 290:             prev_bit = bit
- 291: 
- 292:         flush_bucket(current_bucket)
+ 284:         if all(bit is None for bit, _ in items):
+ 285:             for _, e in items:
+ 286:                 new_edges[e.edge_id] = e
+ 287:             continue
+ 288: 
+ 289:         items.sort(key=lambda x: (-1 if x[0] is None else x[0]))
+ 290: 
+ 291:         current_bucket: List[Tuple[Optional[int], DKGEdge]] = []
+ 292:         prev_bit: Optional[int] = None
  293: 
- 294:     return new_edges
- 295: 
- 296: 
- 297: def reindex_node_edges(nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge]) -> None:
- 298:     for n in nodes.values():
- 299:         n.in_edges = []
- 300:         n.out_edges = []
+ 294:         def flush_bucket(bucket: List[Tuple[Optional[int], DKGEdge]]) -> None:
+ 295:             nonlocal new_eid
+ 296:             if not bucket:
+ 297:                 return
+ 298: 
+ 299:             bits = [b for b, _ in bucket if b is not None]
+ 300:             edges_in_bucket = [e for _, e in bucket]
  301: 
- 302:     for e in edges.values():
- 303:         nodes[e.src_node].out_edges.append(e.edge_id)
- 304:         nodes[e.dst_node].in_edges.append(e.edge_id)
- 305: 
+ 302:             if len(bits) <= 1:
+ 303:                 e = edges_in_bucket[0]
+ 304:                 new_edges[e.edge_id] = e
+ 305:                 return
  306: 
- 307: def build_nodes_and_edges(
- 308:     wires: Dict[int, Wire],
- 309:     cells: List[CellIR],
- 310: ) -> Tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
- 311:     connect_wires_to_cells(wires, cells)
- 312: 
- 313:     nodes: Dict[str, DKGNode] = {}
- 314:     for cell in cells:
- 315:         node_id = make_node_id(cell)
- 316:         node = DKGNode(
- 317:             node_id=node_id,
- 318:             entity_class=map_cell_type(cell.type),
- 319:             hier_path=cell.module,
- 320:             local_name=cell.name,
- 321:         )
- 322:         node.canonical_name = make_node_canonical_name(node)
- 323: 
- 324:         file, line = parse_src(cell.src)
- 325:         prov = Provenance(
- 326:             origin_file=file,
- 327:             origin_line=line,
- 328:             tool_stage="rtl",
- 329:             confidence="exact",
- 330:         )
- 331:         add_provenance(node, prov, make_primary=True)
- 332:         nodes[node_id] = node
- 333: 
- 334:     edges: Dict[str, DKGEdge] = {}
- 335:     eid = 0
- 336: 
- 337:     for w in wires.values():
- 338:         for src in w.drivers:
- 339:             for dst in w.loads:
- 340:                 edge_id = f"e{eid}"
- 341:                 eid += 1
+ 307:             msb = max(bits)
+ 308:             lsb = min(bits)
+ 309:             base_edge = edges_in_bucket[0]
+ 310:             merged = DKGEdge(
+ 311:                 edge_id=f"bus_e{new_eid}",
+ 312:                 src_node=base_edge.src_node,
+ 313:                 dst_node=base_edge.dst_node,
+ 314:                 relation_type=base_edge.relation_type,
+ 315:                 flow_type=base_edge.flow_type,
+ 316:                 signal_name=f"{base}[{msb}:{lsb}]",
+ 317:                 canonical_name=base_edge.canonical_name,
+ 318:                 bit_range=(msb, lsb),
+ 319:                 net_id=base_edge.net_id,
+ 320:                 driver_type=base_edge.driver_type,
+ 321:                 fanout_count=base_edge.fanout_count,
+ 322:                 clock_signal=base_edge.clock_signal,
+ 323:                 reset_signal=base_edge.reset_signal,
+ 324:                 clock_domain_id=base_edge.clock_domain_id,
+ 325:                 timing_exception=base_edge.timing_exception,
+ 326:                 delay=base_edge.delay,
+ 327:                 arrival_time=base_edge.arrival_time,
+ 328:                 required_time=base_edge.required_time,
+ 329:                 slack=base_edge.slack,
+ 330:                 attributes=dict(base_edge.attributes),
+ 331:                 provenances=[],
+ 332:                 primary_provenance=None,
+ 333:             )
+ 334: 
+ 335:             primary, provs = merge_provenances_edges(edges_in_bucket)
+ 336:             merged.provenances = provs
+ 337:             merged.primary_provenance = primary
+ 338:             merged.attributes["merged_bits"] = sorted(bits)
+ 339: 
+ 340:             new_edges[merged.edge_id] = merged
+ 341:             new_eid += 1
  342: 
- 343:                 edge = DKGEdge(
- 344:                     edge_id=edge_id,
- 345:                     src_node=src,
- 346:                     dst_node=dst,
- 347:                     relation_type=RelationType.DATA,
- 348:                     flow_type=EdgeFlowType.COMBINATIONAL,
- 349:                     signal_name=w.name or f"wire_{w.wire_id}",
- 350:                     canonical_name=f"{src}->{dst}",
- 351:                 )
- 352: 
- 353:                 file, line = parse_src(w.src)
- 354:                 prov = Provenance(
- 355:                     origin_file=file,
- 356:                     origin_line=line,
- 357:                     tool_stage="rtl",
- 358:                     confidence="exact",
- 359:                 )
- 360:                 add_provenance(edge, prov, make_primary=True)
- 361: 
- 362:                 edges[edge_id] = edge
+ 343:         for bit, e in items:
+ 344:             if bit is None:
+ 345:                 flush_bucket(current_bucket)
+ 346:                 current_bucket = []
+ 347:                 new_edges[e.edge_id] = e
+ 348:                 prev_bit = None
+ 349:                 continue
+ 350: 
+ 351:             if prev_bit is None or bit == prev_bit - 1:
+ 352:                 current_bucket.append((bit, e))
+ 353:             else:
+ 354:                 flush_bucket(current_bucket)
+ 355:                 current_bucket = [(bit, e)]
+ 356: 
+ 357:             prev_bit = bit
+ 358: 
+ 359:         flush_bucket(current_bucket)
+ 360: 
+ 361:     return new_edges
+ 362: 
  363: 
- 364:     edges = merge_bit_edges_to_bus(edges)
- 365: 
- 366:     new_edges: Dict[str, DKGEdge] = {}
- 367:     for e in edges.values():
- 368:         new_id = make_edge_id(e)
- 369:         e.edge_id = new_id
- 370:         new_edges[new_id] = e
- 371: 
- 372:     edges = new_edges
- 373:     reindex_node_edges(nodes, edges)
- 374: 
- 375:     clock_nets, reset_nets = detect_clock_reset_signals(nodes, edges)
- 376:     assign_clock_domains(nodes, edges, clock_nets)
- 377:     assign_edge_flow_types(nodes, edges, clock_nets, reset_nets)
- 378: 
- 379:     return nodes, edges
+ 364: def reindex_node_edges(nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge]) -> None:
+ 365:     for n in nodes.values():
+ 366:         n.in_edges = []
+ 367:         n.out_edges = []
+ 368: 
+ 369:     for e in edges.values():
+ 370:         nodes[e.src_node].out_edges.append(e.edge_id)
+ 371:         nodes[e.dst_node].in_edges.append(e.edge_id)
+ 372: 
+ 373: 
+ 374: def build_nodes_and_edges(
+ 375:     wires: Dict[int, Wire],
+ 376:     cells: List[CellIR],
+ 377: ) -> Tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
+ 378:     connect_wires_to_cells(wires, cells)
+ 379: 
+ 380:     nodes: Dict[str, DKGNode] = {}
+ 381:     for cell in cells:
+ 382:         node_id = make_node_id(cell)
+ 383:         node = DKGNode(
+ 384:             node_id=node_id,
+ 385:             entity_class=map_cell_type(cell.type),
+ 386:             hier_path=cell.module,
+ 387:             local_name=cell.name,
+ 388:         )
+ 389:         node.canonical_name = make_node_canonical_name(node)
+ 390: 
+ 391:         file, line = parse_src(cell.src)
+ 392:         prov = Provenance(
+ 393:             origin_file=file,
+ 394:             origin_line=line,
+ 395:             tool_stage="rtl",
+ 396:             confidence="exact",
+ 397:         )
+ 398:         add_provenance(node, prov, make_primary=True)
+ 399:         nodes[node_id] = node
+ 400: 
+ 401:     edges: Dict[str, DKGEdge] = {}
+ 402:     eid = 0
+ 403: 
+ 404:     for w in wires.values():
+ 405:         for src in w.drivers:
+ 406:             for dst in w.loads:
+ 407:                 edge_id = f"e{eid}"
+ 408:                 eid += 1
+ 409: 
+ 410:                 edge = DKGEdge(
+ 411:                     edge_id=edge_id,
+ 412:                     src_node=src,
+ 413:                     dst_node=dst,
+ 414:                     relation_type=RelationType.DATA,
+ 415:                     flow_type=EdgeFlowType.COMBINATIONAL,
+ 416:                     signal_name=w.name or f"wire_{w.wire_id}",
+ 417:                     canonical_name=f"{src}->{dst}",
+ 418:                 )
+ 419: 
+ 420:                 file, line = parse_src(w.src)
+ 421:                 prov = Provenance(
+ 422:                     origin_file=file,
+ 423:                     origin_line=line,
+ 424:                     tool_stage="rtl",
+ 425:                     confidence="exact",
+ 426:                 )
+ 427:                 add_provenance(edge, prov, make_primary=True)
+ 428: 
+ 429:                 edges[edge_id] = edge
+ 430: 
+ 431:     edges = merge_bit_edges_to_bus(edges)
+ 432: 
+ 433:     new_edges: Dict[str, DKGEdge] = {}
+ 434:     for e in edges.values():
+ 435:         new_id = make_edge_id(e)
+ 436:         e.edge_id = new_id
+ 437:         new_edges[new_id] = e
+ 438: 
+ 439:     edges = new_edges
+ 440:     reindex_node_edges(nodes, edges)
+ 441: 
+ 442:     clock_nets, reset_nets = detect_clock_reset_signals(nodes, edges, cells, wires)
+ 443:     assign_clock_domains(nodes, edges, clock_nets)
+ 444:     assign_edge_flow_types(nodes, edges, clock_nets, reset_nets)
+ 445: 
+ 446:     return nodes, edges
 
 
 ================================================================================

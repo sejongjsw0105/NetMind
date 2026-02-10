@@ -1,0 +1,187 @@
+DKG View / SuperGraph 규약 메모 (Draft)
+1. View의 정의 (Graph View Semantics)
+View란?
+
+View는 원본 DKG를 “특정 분석 목적에 맞게 추상화한 그래프”이다.
+
+View는 정보를 삭제하지 않는다
+
+View는 정보를 재배치/요약/접음(folding)
+
+모든 View는 다음을 만족해야 한다:
+
+원본 DKG로 역추적 가능
+
+Node/Edge의 provenance 보존
+
+View 정책에 따른 일관된 추상화 규칙
+
+2. View 구성 요소
+구성
+
+SuperNode: 하나 이상의 DKGNode를 대표하는 추상 노드
+
+SuperEdge: SuperNode 간 연결을 대표하는 edge bundle
+
+node_to_super: DKGNode → SuperNode 매핑
+
+3. NodeAction 정의
+
+NodeAction은 View 정책에서 각 엔티티가 어떻게 취급되는지를 정의한다.
+
+PROMOTE
+
+해당 노드는 독립적인 SuperNode가 된다
+
+member_nodes = {node_id}
+
+의미적으로 “분석의 관심 대상”
+
+예:
+
+FlipFlop (Connectivity View)
+
+IO Port
+
+DSP / BRAM
+
+MERGE
+
+여러 노드가 하나의 SuperNode로 병합된다
+
+병합 기준:
+
+View 정책에 의해 허용된 엔티티 타입
+
+1-hop connectivity 기반 연결 성분
+
+병합된 SuperNode는 하나의 논리적 단위로 취급
+
+의미:
+
+“개별 노드보다는 집합적 구조가 중요”
+
+예:
+
+Combinational logic cloud
+
+LUT / MUX 묶음
+
+ELIMINATE
+
+View에서 직접적으로 표현되지 않는다
+
+단, 정보는 상위 SuperNode 또는 SuperEdge로 전파
+
+의미:
+
+“분석 목적상 노드 자체는 중요하지 않음”
+
+예:
+
+Package pin
+
+Board-level object
+
+일부 physical-only entity
+
+4. SuperNode 규약
+SuperNode의 의미
+
+SuperNode는 ‘접힌 그래프’ 또는 ‘요약된 구조’를 나타낸다
+
+SuperNode는 다음 중 하나의 내부 표현을 가진다:
+
+SuperClass	내부 표현
+ATOMIC	단일 노드
+COMB_CLOUD	내부 그래프
+SEQ_CHAIN	시퀀스 요약
+MODULE_CLUSTER	포트/인터페이스 요약
+ELIMINATED	내부 그래프 없음
+Expand 규칙
+
+Expand 가능
+
+COMB_CLOUD
+
+SEQ_CHAIN
+
+Expand 불가 (요약만 제공)
+
+FSM
+
+MODULE_CLUSTER
+
+ELIMINATED
+
+Expand 불가는 설계 결함이 아니라 의도된 추상화이다.
+
+5. SuperEdge 규약
+SuperEdge의 정의
+
+SuperEdge는 하나 이상의 DKGEdge를 대표하는 연결 묶음이다
+
+SuperEdge는 단일 의미를 강제하지 않는다
+
+의미는 member_edges에 보존된다
+
+SuperEdge가 보장하는 것:
+
+연결 관계의 존재
+
+원본 edge로의 역추적 가능성
+
+relation / flow type의 집합 보존
+
+SuperEdge가 보장하지 않는 것:
+
+단일 timing 의미
+
+단일 constraint 의미
+
+6. 그래프 뷰 추출 규칙 (ViewBuilder)
+
+View 추출은 다음 순서로 수행된다:
+
+Cycle 1 – Promote
+
+PROMOTE 노드 → 단일 SuperNode 생성
+
+Cycle 2 – Merge
+
+MERGE 대상 노드 → 연결 성분 단위 병합
+
+Cycle 2.5 – Eliminate
+
+ELIMINATE 노드 → 개별 SuperNode로 캡슐화
+
+Cycle 3 – Edge Rewrite
+
+DKGEdge → SuperEdge로 재작성
+
+7. View의 보장 사항 (View Contract)
+
+모든 View는 다음을 보장한다:
+
+원본 DKGNode / DKGEdge로 역추적 가능
+
+provenance 손실 없음
+
+View 정책에 따른 일관성
+
+View가 보장하지 않는 것:
+
+RTL-level 정확성
+
+Timing 정확성
+
+Constraint 완전성
+
+View는 분석을 위한 해석 계층이지,
+원본 설계를 대체하지 않는다.
+
+8. 설계 의도 요약 (한 문단)
+
+본 시스템에서 View는 원본 설계 그래프를 분석 목적에 맞게 추상화한 표현이다.
+SuperNode와 SuperEdge는 정보를 삭제하지 않고 접거나 요약함으로써
+대규모 설계에서도 의미 있는 구조적/연결적 패턴을 노출하는 것을 목표로 한다.

@@ -134,29 +134,96 @@ def connect_wires_to_cells(wires: Dict[int, Wire], cells: Iterable[CellIR]) -> N
                     w.loads.append(node_id)
 
 
+def detect_clock_reset_from_ff_cells(
+    cells: List[CellIR],
+    wires: Dict[int, Wire],
+) -> Tuple[set[str], set[str]]:
+    """
+    Yosys FF cell 포트 정보에서 clock/reset 신호 직접 추출.
+    
+    구조적 분석을 통해 신뢰도 높은 식별:
+    - $dff, $adff, $sdff 등의 CLK 포트 → clock
+    - ARST, SRST 포트 → reset
+    """
+    clock_nets: set[str] = set()
+    reset_nets: set[str] = set()
+    
+    # FF cell 타입 정의
+    ff_cell_types = {
+        "$dff", "$adff", "$sdff",
+        "$dffe", "$sdffe", "$aldff", "$aldffe",
+    }
+    
+    for cell in cells:
+        if cell.type not in ff_cell_types:
+            continue
+        
+        # CLK 포트 찾기
+        if "CLK" in cell.connections:
+            clk_wids = cell.connections["CLK"]
+            for wid in clk_wids:
+                w = get_wire(wires, wid)
+                if w and w.name:
+                    clock_nets.add(w.name)
+        
+        # 비동기 리셋 포트 (ARST, ARST_N 등)
+        async_reset_ports = {"ARST", "ARST_N", "NRST", "NRESET"}
+        for port in async_reset_ports:
+            if port in cell.connections:
+                rst_wids = cell.connections[port]
+                for wid in rst_wids:
+                    w = get_wire(wires, wid)
+                    if w and w.name:
+                        reset_nets.add(w.name)
+        
+        # 동기 리셋 포트 (SRST, SRST_N 등)
+        sync_reset_ports = {"SRST", "SRST_N", "SR", "R", "RST"}
+        for port in sync_reset_ports:
+            if port in cell.connections:
+                rst_wids = cell.connections[port]
+                for wid in rst_wids:
+                    w = get_wire(wires, wid)
+                    if w and w.name:
+                        reset_nets.add(w.name)
+    
+    return clock_nets, reset_nets
+
+
 def detect_clock_reset_signals(
     nodes: Dict[str, DKGNode],
     edges: Dict[str, DKGEdge],
+    cells: List[CellIR],
+    wires: Dict[int, Wire],
 ) -> Tuple[set[str], set[str]]:
-    clock_nets: set[str] = set()
-    reset_nets: set[str] = set()
-
+    """
+    Clock/Reset 신호 식별 (다단계 우선순위).
+    
+    1️⃣ 구조적 분석: FF cell 포트 정보 (높은 신뢰도)
+    2️⃣ 신호 분석: edge의 flow 정보
+    3️⃣ 이름 기반 휴리스틱: 패턴 매칭 (낮은 신뢰도)
+    """
+    # Stage 1: 구조적 분석 (FF cell 포트)
+    clock_nets, reset_nets = detect_clock_reset_from_ff_cells(cells, wires)
+    
+    # Stage 2: 엣지 신호 이름 기반 (추론)
     for e in edges.values():
         if is_clock_name(e.signal_name):
             clock_nets.add(e.signal_name)
         if is_reset_name(e.signal_name):
             reset_nets.add(e.signal_name)
-
+    
+    # Stage 3: FF 입력 신호 확인 (구조적 재검증)
     for n in nodes.values():
         if n.entity_class != EntityClass.FLIP_FLOP:
             continue
         for eid in n.in_edges:
             e = edges[eid]
-            if is_clock_name(e.signal_name):
+            # 이미 식별된 것은 확인, 아니면 추가 확인
+            if is_clock_name(e.signal_name) and e.signal_name not in clock_nets:
                 clock_nets.add(e.signal_name)
-            if is_reset_name(e.signal_name):
+            if is_reset_name(e.signal_name) and e.signal_name not in reset_nets:
                 reset_nets.add(e.signal_name)
-
+    
     return clock_nets, reset_nets
 
 
@@ -372,7 +439,7 @@ def build_nodes_and_edges(
     edges = new_edges
     reindex_node_edges(nodes, edges)
 
-    clock_nets, reset_nets = detect_clock_reset_signals(nodes, edges)
+    clock_nets, reset_nets = detect_clock_reset_signals(nodes, edges, cells, wires)
     assign_clock_domains(nodes, edges, clock_nets)
     assign_edge_flow_types(nodes, edges, clock_nets, reset_nets)
 

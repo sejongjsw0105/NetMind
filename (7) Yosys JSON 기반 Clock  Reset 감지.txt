@@ -1,0 +1,5 @@
+Clock / Reset은 정확한 타이밍 모델이 아니라
+그래프 의미 분리를 위한 가설이다.
+
+Raw Node ID는 불안정해도 괜찮다.
+안정성이 필요한 계층은 View(SuperNode)이다.
