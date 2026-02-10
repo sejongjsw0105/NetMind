@@ -4,6 +4,47 @@ FILE: dkg\__init__.py
 
 
 ================================================================================
+FILE: dkg\parsers\__init__.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from abc import ABC, abstractmethod
+   4: from typing import Dict
+   5: 
+   6: from ..graph import DKGEdge, DKGNode
+   7: from ..graph_updater import GraphUpdater
+   8: from ..stages import ParsingStage
+   9: 
+  10: 
+  11: class ConstraintParser(ABC):
+  12:     """제약 파일 파서 베이스 클래스"""
+  13:     
+  14:     @abstractmethod
+  15:     def get_stage(self) -> ParsingStage:
+  16:         """이 파서가 속한 stage 반환"""
+  17:         pass
+  18:     
+  19:     @abstractmethod
+  20:     def parse_and_update(
+  21:         self,
+  22:         filepath: str,
+  23:         updater: GraphUpdater,
+  24:         nodes: Dict[str, DKGNode],
+  25:         edges: Dict[str, DKGEdge],
+  26:     ) -> None:
+  27:         """
+  28:         파일을 파싱하고 그래프를 업데이트.
+  29:         
+  30:         Args:
+  31:             filepath: 파싱할 파일 경로
+  32:             updater: GraphUpdater 인스턴스
+  33:             nodes: 기존 노드 딕셔너리
+  34:             edges: 기존 엣지 딕셔너리
+  35:         """
+  36:         pass
+
+
+================================================================================
 FILE: main.py
 ================================================================================
    1: from __future__ import annotations
@@ -737,6 +778,269 @@ FILE: dkg\graph_build.py
 
 
 ================================================================================
+FILE: dkg\graph_metadata.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from dataclasses import dataclass, field
+   4: from typing import Any, Dict, Optional
+   5: 
+   6: from .stages import FieldSource, ParsingStage
+   7: 
+   8: 
+   9: @dataclass
+  10: class FieldMetadata:
+  11:     """각 필드 값의 메타데이터"""
+  12:     
+  13:     value: Any
+  14:     source: FieldSource
+  15:     stage: ParsingStage
+  16:     origin_file: Optional[str] = None
+  17:     origin_line: Optional[int] = None
+  18:     timestamp: Optional[float] = None  # 업데이트 시각
+  19: 
+  20: 
+  21: @dataclass
+  22: class NodeMetadata:
+  23:     """노드의 모든 필드에 대한 메타데이터"""
+  24:     
+  25:     fields: Dict[str, FieldMetadata] = field(default_factory=dict)
+  26:     
+  27:     def get(self, field_name: str, default: Any = None) -> Any:
+  28:         """필드 값 반환"""
+  29:         if field_name in self.fields:
+  30:             return self.fields[field_name].value
+  31:         return default
+  32:     
+  33:     def get_source(self, field_name: str) -> Optional[FieldSource]:
+  34:         """필드의 출처 반환"""
+  35:         if field_name in self.fields:
+  36:             return self.fields[field_name].source
+  37:         return None
+  38:     
+  39:     def set(
+  40:         self,
+  41:         field_name: str,
+  42:         value: Any,
+  43:         source: FieldSource,
+  44:         stage: ParsingStage,
+  45:         origin_file: Optional[str] = None,
+  46:         origin_line: Optional[int] = None,
+  47:     ) -> None:
+  48:         """필드 값 설정"""
+  49:         self.fields[field_name] = FieldMetadata(
+  50:             value=value,
+  51:             source=source,
+  52:             stage=stage,
+  53:             origin_file=origin_file,
+  54:             origin_line=origin_line,
+  55:         )
+  56:     
+  57:     def should_update(self, field_name: str, new_source: FieldSource) -> bool:
+  58:         """필드를 업데이트해야 하는지 판단"""
+  59:         from .stages import should_update_field
+  60:         
+  61:         current_source = self.get_source(field_name)
+  62:         return should_update_field(current_source, new_source)
+  63: 
+  64: 
+  65: @dataclass
+  66: class EdgeMetadata:
+  67:     """엣지의 모든 필드에 대한 메타데이터"""
+  68:     
+  69:     fields: Dict[str, FieldMetadata] = field(default_factory=dict)
+  70:     
+  71:     def get(self, field_name: str, default: Any = None) -> Any:
+  72:         if field_name in self.fields:
+  73:             return self.fields[field_name].value
+  74:         return default
+  75:     
+  76:     def get_source(self, field_name: str) -> Optional[FieldSource]:
+  77:         if field_name in self.fields:
+  78:             return self.fields[field_name].source
+  79:         return None
+  80:     
+  81:     def set(
+  82:         self,
+  83:         field_name: str,
+  84:         value: Any,
+  85:         source: FieldSource,
+  86:         stage: ParsingStage,
+  87:         origin_file: Optional[str] = None,
+  88:         origin_line: Optional[int] = None,
+  89:     ) -> None:
+  90:         self.fields[field_name] = FieldMetadata(
+  91:             value=value,
+  92:             source=source,
+  93:             stage=stage,
+  94:             origin_file=origin_file,
+  95:             origin_line=origin_line,
+  96:         )
+  97:     
+  98:     def should_update(self, field_name: str, new_source: FieldSource) -> bool:
+  99:         from .stages import should_update_field
+ 100:         
+ 101:         current_source = self.get_source(field_name)
+ 102:         return should_update_field(current_source, new_source)
+
+
+================================================================================
+FILE: dkg\graph_updater.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from typing import Any, Dict, Optional
+   4: 
+   5: from .graph import DKGEdge, DKGNode
+   6: from .graph_metadata import EdgeMetadata, NodeMetadata
+   7: from .stages import FieldSource, ParsingStage
+   8: 
+   9: 
+  10: class GraphUpdater:
+  11:     """
+  12:     그래프를 점진적으로 업데이트하는 엔진.
+  13:     각 파싱 stage가 기존 그래프에 새 정보를 merge할 때 사용.
+  14:     """
+  15:     
+  16:     def __init__(
+  17:         self,
+  18:         nodes: Dict[str, DKGNode],
+  19:         edges: Dict[str, DKGEdge],
+  20:     ):
+  21:         self.nodes = nodes
+  22:         self.edges = edges
+  23:         
+  24:         # 메타데이터 저장소 (node_id/edge_id -> metadata)
+  25:         self.node_metadata: Dict[str, NodeMetadata] = {
+  26:             nid: NodeMetadata() for nid in nodes
+  27:         }
+  28:         self.edge_metadata: Dict[str, EdgeMetadata] = {
+  29:             eid: EdgeMetadata() for eid in edges
+  30:         }
+  31:     
+  32:     def update_node_field(
+  33:         self,
+  34:         node_id: str,
+  35:         field_name: str,
+  36:         value: Any,
+  37:         source: FieldSource,
+  38:         stage: ParsingStage,
+  39:         origin_file: Optional[str] = None,
+  40:         origin_line: Optional[int] = None,
+  41:     ) -> bool:
+  42:         """
+  43:         노드 필드를 업데이트.
+  44:         
+  45:         Returns:
+  46:             True if updated, False if skipped (lower priority)
+  47:         """
+  48:         if node_id not in self.nodes:
+  49:             return False
+  50:         
+  51:         meta = self.node_metadata[node_id]
+  52:         
+  53:         if not meta.should_update(field_name, source):
+  54:             return False
+  55:         
+  56:         # 메타데이터 업데이트
+  57:         meta.set(field_name, value, source, stage, origin_file, origin_line)
+  58:         
+  59:         # 실제 노드 객체 업데이트
+  60:         if hasattr(self.nodes[node_id], field_name):
+  61:             setattr(self.nodes[node_id], field_name, value)
+  62:         
+  63:         return True
+  64:     
+  65:     def update_edge_field(
+  66:         self,
+  67:         edge_id: str,
+  68:         field_name: str,
+  69:         value: Any,
+  70:         source: FieldSource,
+  71:         stage: ParsingStage,
+  72:         origin_file: Optional[str] = None,
+  73:         origin_line: Optional[int] = None,
+  74:     ) -> bool:
+  75:         """엣지 필드를 업데이트"""
+  76:         if edge_id not in self.edges:
+  77:             return False
+  78:         
+  79:         meta = self.edge_metadata[edge_id]
+  80:         
+  81:         if not meta.should_update(field_name, source):
+  82:             return False
+  83:         
+  84:         meta.set(field_name, value, source, stage, origin_file, origin_line)
+  85:         
+  86:         if hasattr(self.edges[edge_id], field_name):
+  87:             setattr(self.edges[edge_id], field_name, value)
+  88:         
+  89:         return True
+  90:     
+  91:     def batch_update_clock_domains(
+  92:         self,
+  93:         clock_assignments: Dict[str, str],  # node_id -> clock_domain
+  94:         source: FieldSource,
+  95:         stage: ParsingStage,
+  96:         origin_file: Optional[str] = None,
+  97:     ) -> int:
+  98:         """클럭 도메인 일괄 업데이트"""
+  99:         count = 0
+ 100:         for node_id, clock_domain in clock_assignments.items():
+ 101:             if self.update_node_field(
+ 102:                 node_id, "clock_domain", clock_domain, source, stage, origin_file
+ 103:             ):
+ 104:                 count += 1
+ 105:         return count
+ 106:     
+ 107:     def batch_update_timing_exceptions(
+ 108:         self,
+ 109:         exceptions: Dict[str, str],  # edge_id -> exception_type
+ 110:         source: FieldSource,
+ 111:         stage: ParsingStage,
+ 112:         origin_file: Optional[str] = None,
+ 113:     ) -> int:
+ 114:         """타이밍 예외 일괄 업데이트"""
+ 115:         count = 0
+ 116:         for edge_id, exception_type in exceptions.items():
+ 117:             if self.update_edge_field(
+ 118:                 edge_id, "timing_exception", exception_type, source, stage, origin_file
+ 119:             ):
+ 120:                 count += 1
+ 121:         return count
+ 122:     
+ 123:     def get_field_history(self, node_id: str, field_name: str) -> Optional[list]:
+ 124:         """필드의 변경 이력 반환 (향후 확장용)"""
+ 125:         # TODO: 이력 추적이 필요하면 metadata에 history 추가
+ 126:         pass
+ 127:     
+ 128:     def export_metadata_summary(self) -> dict:
+ 129:         """메타데이터 요약 반환 (디버깅/캐싱 용)"""
+ 130:         return {
+ 131:             "nodes": {
+ 132:                 nid: {
+ 133:                     field: {
+ 134:                         "source": meta.source.value,
+ 135:                         "stage": meta.stage.value,
+ 136:                     }
+ 137:                     for field, meta in nm.fields.items()
+ 138:                 }
+ 139:                 for nid, nm in self.node_metadata.items()
+ 140:             },
+ 141:             "edges": {
+ 142:                 eid: {
+ 143:                     field: {
+ 144:                         "source": meta.source.value,
+ 145:                         "stage": meta.stage.value,
+ 146:                     }
+ 147:                     for field, meta in em.fields.items()
+ 148:                 }
+ 149:                 for eid, em in self.edge_metadata.items()
+ 150:             },
+ 151:         }
+
+
+================================================================================
 FILE: dkg\ir.py
 ================================================================================
    1: from __future__ import annotations
@@ -762,6 +1066,333 @@ FILE: dkg\ir.py
   21:     port_dirs: dict[str, str]
   22:     connections: dict[str, list[int]]
   23:     src: Optional[str] = None
+
+
+================================================================================
+FILE: dkg\parsers\sdc_parser.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: import re
+   4: from typing import Dict
+   5: 
+   6: from ..graph import DKGEdge, DKGNode
+   7: from ..graph_updater import GraphUpdater
+   8: from ..stages import FieldSource, ParsingStage
+   9: from . import ConstraintParser
+  10: 
+  11: 
+  12: class SdcParser(ConstraintParser):
+  13:     """
+  14:     SDC (Synopsys Design Constraints) 파서.
+  15:     
+  16:     처리하는 명령:
+  17:     - create_clock: 클럭 정의
+  18:     - set_input_delay / set_output_delay: I/O 타이밍
+  19:     - set_false_path: false path 제약
+  20:     - set_multicycle_path: multicycle 제약
+  21:     - set_max_delay / set_min_delay: 지연 제약
+  22:     """
+  23:     
+  24:     def get_stage(self) -> ParsingStage:
+  25:         return ParsingStage.CONSTRAINTS
+  26:     
+  27:     def parse_and_update(
+  28:         self,
+  29:         filepath: str,
+  30:         updater: GraphUpdater,
+  31:         nodes: Dict[str, DKGNode],
+  32:         edges: Dict[str, DKGEdge],
+  33:     ) -> None:
+  34:         with open(filepath, "r", encoding="utf-8") as f:
+  35:             lines = f.readlines()
+  36:         
+  37:         for line_num, line in enumerate(lines, start=1):
+  38:             line = line.strip()
+  39:             
+  40:             # create_clock 처리
+  41:             if line.startswith("create_clock"):
+  42:                 self._parse_create_clock(
+  43:                     line, line_num, filepath, updater, nodes, edges
+  44:                 )
+  45:             
+  46:             # set_false_path 처리
+  47:             elif line.startswith("set_false_path"):
+  48:                 self._parse_false_path(
+  49:                     line, line_num, filepath, updater, edges
+  50:                 )
+  51:             
+  52:             # set_multicycle_path 처리
+  53:             elif line.startswith("set_multicycle_path"):
+  54:                 self._parse_multicycle_path(
+  55:                     line, line_num, filepath, updater, edges
+  56:                 )
+  57:     
+  58:     def _parse_create_clock(
+  59:         self,
+  60:         line: str,
+  61:         line_num: int,
+  62:         filepath: str,
+  63:         updater: GraphUpdater,
+  64:         nodes: Dict[str, DKGNode],
+  65:         edges: Dict[str, DKGEdge],
+  66:     ) -> None:
+  67:         """
+  68:         create_clock 명령 파싱.
+  69:         예: create_clock -name clk -period 10 [get_ports clk]
+  70:         """
+  71:         # 간단한 정규식 (실제로는 더 정교해야 함)
+  72:         match = re.search(r"-name\s+(\w+)", line)
+  73:         if not match:
+  74:             return
+  75:         
+  76:         clock_name = match.group(1)
+  77:         
+  78:         # get_ports로 포트 이름 추출
+  79:         port_match = re.search(r"get_ports\s+(\w+)", line)
+  80:         if not port_match:
+  81:             return
+  82:         
+  83:         port_name = port_match.group(1)
+  84:         
+  85:         # 해당 포트를 가진 노드들 찾기
+  86:         for node_id, node in nodes.items():
+  87:             if node.local_name == port_name:
+  88:                 updater.update_node_field(
+  89:                     node_id,
+  90:                     "clock_domain",
+  91:                     clock_name,
+  92:                     FieldSource.DECLARED,
+  93:                     ParsingStage.CONSTRAINTS,
+  94:                     filepath,
+  95:                     line_num,
+  96:                 )
+  97:         
+  98:         # 해당 신호를 가진 엣지들도 업데이트
+  99:         for edge_id, edge in edges.items():
+ 100:             if edge.signal_name == port_name:
+ 101:                 updater.update_edge_field(
+ 102:                     edge_id,
+ 103:                     "clock_signal",
+ 104:                     clock_name,
+ 105:                     FieldSource.DECLARED,
+ 106:                     ParsingStage.CONSTRAINTS,
+ 107:                     filepath,
+ 108:                     line_num,
+ 109:                 )
+ 110:     
+ 111:     def _parse_false_path(
+ 112:         self,
+ 113:         line: str,
+ 114:         line_num: int,
+ 115:         filepath: str,
+ 116:         updater: GraphUpdater,
+ 117:         edges: Dict[str, DKGEdge],
+ 118:     ) -> None:
+ 119:         """
+ 120:         set_false_path 명령 파싱.
+ 121:         예: set_false_path -from [get_pins src/*] -to [get_pins dst/*]
+ 122:         """
+ 123:         # 간단한 구현 (실제로는 -from/-to 파싱 필요)
+ 124:         # TODO: 실제 from/to 노드 매칭 로직 구현
+ 125:         
+ 126:         # 일단 placeholder
+ 127:         # affected_edges = find_edges_between(from_pattern, to_pattern)
+ 128:         # for edge_id in affected_edges:
+ 129:         #     updater.update_edge_field(...)
+ 130:         pass
+ 131:     
+ 132:     def _parse_multicycle_path(
+ 133:         self,
+ 134:         line: str,
+ 135:         line_num: int,
+ 136:         filepath: str,
+ 137:         updater: GraphUpdater,
+ 138:         edges: Dict[str, DKGEdge],
+ 139:     ) -> None:
+ 140:         """
+ 141:         set_multicycle_path 명령 파싱.
+ 142:         예: set_multicycle_path 2 -from [get_pins ...] -to [get_pins ...]
+ 143:         """
+ 144:         # TODO: 구현
+ 145:         pass
+
+
+================================================================================
+FILE: dkg\parsers\xdc_parser.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from typing import Dict
+   4: 
+   5: from ..graph import DKGEdge, DKGNode
+   6: from ..graph_updater import GraphUpdater
+   7: from ..stages import ParsingStage
+   8: from . import ConstraintParser
+   9: 
+  10: 
+  11: class XdcParser(ConstraintParser):
+  12:     """
+  13:     XDC (Xilinx Design Constraints) 파서.
+  14:     
+  15:     SDC와 유사하지만 Xilinx 특화 명령 포함:
+  16:     - set_property LOC / IOSTANDARD: 핀 배치
+  17:     - create_pblock: 물리적 블록 정의
+  18:     """
+  19:     
+  20:     def get_stage(self) -> ParsingStage:
+  21:         return ParsingStage.CONSTRAINTS
+  22:     
+  23:     def parse_and_update(
+  24:         self,
+  25:         filepath: str,
+  26:         updater: GraphUpdater,
+  27:         nodes: Dict[str, DKGNode],
+  28:         edges: Dict[str, DKGEdge],
+  29:     ) -> None:
+  30:         # TODO: XDC 파싱 구현
+  31:         # SDC 파서와 유사하지만 set_property 등 처리
+  32:         pass
+
+
+================================================================================
+FILE: dkg\pipeline.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from pathlib import Path
+   4: from typing import Dict, List, Optional
+   5: 
+   6: from .config import YosysConfig
+   7: from .graph import DKGEdge, DKGNode
+   8: from .graph_build import build_nodes_and_edges, build_wires_and_cells
+   9: from .graph_updater import GraphUpdater
+  10: from .parsers import ConstraintParser
+  11: from .parsers.sdc_parser import SdcParser
+  12: from .parsers.xdc_parser import XdcParser
+  13: from .stages import FieldSource, ParsingStage
+  14: from .yosys_parser import parse_yosys
+  15: 
+  16: 
+  17: class DKGPipeline:
+  18:     """
+  19:     전체 DKG 구축 파이프라인.
+  20:     
+  21:     Usage:
+  22:         pipeline = DKGPipeline(yosys_config)
+  23:         
+  24:         # Stage 1: RTL 파싱
+  25:         pipeline.run_rtl_stage()
+  26:         
+  27:         # Stage 2: Constraint 추가
+  28:         pipeline.add_constraints("design.sdc")
+  29:         pipeline.add_constraints("design.xdc")
+  30:         
+  31:         # Stage 3: 타이밍 리포트 추가
+  32:         pipeline.add_timing_report("timing.rpt")
+  33:         
+  34:         # 최종 그래프 반환
+  35:         nodes, edges = pipeline.get_graph()
+  36:     """
+  37:     
+  38:     def __init__(self, yosys_config: YosysConfig):
+  39:         self.yosys_config = yosys_config
+  40:         
+  41:         self.nodes: Optional[Dict[str, DKGNode]] = None
+  42:         self.edges: Optional[Dict[str, DKGEdge]] = None
+  43:         self.updater: Optional[GraphUpdater] = None
+  44:         
+  45:         self.current_stage = None
+  46:         self.completed_stages: List[ParsingStage] = []
+  47:         
+  48:         # 파서 레지스트리
+  49:         self.parsers: Dict[str, ConstraintParser] = {
+  50:             "sdc": SdcParser(),
+  51:             "xdc": XdcParser(),
+  52:             # TODO: 추가 파서 등록
+  53:         }
+  54:     
+  55:     def run_rtl_stage(self) -> None:
+  56:         """Stage 1: RTL 파싱 (Yosys)"""
+  57:         yosys = parse_yosys(self.yosys_config)
+  58:         wires, cells = build_wires_and_cells(yosys)
+  59:         self.nodes, self.edges = build_nodes_and_edges(wires, cells)
+  60:         
+  61:         self.updater = GraphUpdater(self.nodes, self.edges)
+  62:         self.current_stage = ParsingStage.RTL
+  63:         self.completed_stages.append(ParsingStage.RTL)
+  64:         
+  65:         # 초기 메타데이터 설정 (모두 INFERRED)
+  66:         self._mark_initial_fields_as_inferred()
+  67:     
+  68:     def add_constraints(self, filepath: str) -> None:
+  69:         """Stage 2: Constraint 파일 추가"""
+  70:         if self.updater is None or self.nodes is None or self.edges is None:
+  71:             raise RuntimeError("RTL stage must be run first")
+  72:         
+  73:         # 파일 확장자로 파서 선택
+  74:         ext = Path(filepath).suffix.lower().lstrip(".")
+  75:         
+  76:         if ext not in self.parsers:
+  77:             raise ValueError(f"Unsupported constraint format: {ext}")
+  78:         
+  79:         parser = self.parsers[ext]
+  80:         parser.parse_and_update(filepath, self.updater, self.nodes, self.edges)
+  81:         
+  82:         if ParsingStage.CONSTRAINTS not in self.completed_stages:
+  83:             self.completed_stages.append(ParsingStage.CONSTRAINTS)
+  84:     
+  85:     def add_timing_report(self, filepath: str) -> None:
+  86:         """Stage 3: 타이밍 리포트 추가"""
+  87:         # TODO: 타이밍 리포트 파서 구현
+  88:         pass
+  89:     
+  90:     def add_floorplan(self, filepath: str) -> None:
+  91:         """Stage 4: Floorplan TCL 추가"""
+  92:         # TODO: TCL 파서 구현
+  93:         pass
+  94:     
+  95:     def get_graph(self) -> tuple[Dict[str, DKGNode], Dict[str, DKGEdge]]:
+  96:         """최종 그래프 반환"""
+  97:         if self.nodes is None or self.edges is None:
+  98:             raise RuntimeError("No graph available. Run RTL stage first.")
+  99:         return self.nodes, self.edges
+ 100:     
+ 101:     def get_updater(self) -> GraphUpdater:
+ 102:         """GraphUpdater 반환 (고급 사용자용)"""
+ 103:         if self.updater is None:
+ 104:             raise RuntimeError("No updater available. Run RTL stage first.")
+ 105:         return self.updater
+ 106:     
+ 107:     def export_metadata(self) -> dict:
+ 108:         """메타데이터 요약 반환 (캐싱/디버깅용)"""
+ 109:         if self.updater is None:
+ 110:             return {}
+ 111:         return self.updater.export_metadata_summary()
+ 112:     
+ 113:     def _mark_initial_fields_as_inferred(self) -> None:
+ 114:         """RTL stage에서 추론한 필드들을 INFERRED로 마킹"""
+ 115:         if self.nodes is None or self.edges is None or self.updater is None:
+ 116:             return
+ 117:         
+ 118:         # clock_domain, flow_type 등 휴리스틱으로 채운 필드들
+ 119:         for node_id, node in self.nodes.items():
+ 120:             if node.clock_domain:
+ 121:                 self.updater.node_metadata[node_id].set(
+ 122:                     "clock_domain",
+ 123:                     node.clock_domain,
+ 124:                     FieldSource.INFERRED,
+ 125:                     ParsingStage.RTL,
+ 126:                 )
+ 127:         
+ 128:         for edge_id, edge in self.edges.items():
+ 129:             if edge.flow_type:
+ 130:                 self.updater.edge_metadata[edge_id].set(
+ 131:                     "flow_type",
+ 132:                     edge.flow_type.value,
+ 133:                     FieldSource.INFERRED,
+ 134:                     ParsingStage.RTL,
+ 135:                 )
 
 
 ================================================================================
@@ -821,6 +1452,76 @@ FILE: dkg\provenance.py
   52:     )
   53: 
   54:     return primary, new_provs
+
+
+================================================================================
+FILE: dkg\stages.py
+================================================================================
+   1: from __future__ import annotations
+   2: 
+   3: from enum import Enum
+   4: from typing import FrozenSet
+   5: 
+   6: 
+   7: class ParsingStage(str, Enum):
+   8:     """파싱 단계 정의. 순서대로 실행됨."""
+   9:     
+  10:     RTL = "rtl"                    # Yosys JSON (구조 정보)
+  11:     SYNTHESIS = "synthesis"        # 합성 후 netlist
+  12:     CONSTRAINTS = "constraints"    # SDC/XDC (타이밍/클럭 제약)
+  13:     FLOORPLAN = "floorplan"        # TCL/Pblock (물리적 배치)
+  14:     TIMING = "timing"              # 타이밍 리포트
+  15:     BOARD = "board"                # BD/board constraints
+  16: 
+  17: 
+  18: class FieldSource(str, Enum):
+  19:     """필드 값의 출처"""
+  20:     
+  21:     INFERRED = "inferred"          # 휴리스틱으로 추론
+  22:     DECLARED = "declared"          # 명시적으로 선언됨
+  23:     ANALYZED = "analyzed"          # 도구 분석 결과
+  24:     USER_OVERRIDE = "user_override"  # 사용자 직접 설정
+  25: 
+  26: 
+  27: # 각 필드가 어느 stage에서 확정되는지 정의
+  28: FIELD_STAGES: dict[str, FrozenSet[ParsingStage]] = {
+  29:     # Node fields
+  30:     "entity_class": frozenset([ParsingStage.RTL, ParsingStage.SYNTHESIS]),
+  31:     "hier_path": frozenset([ParsingStage.RTL, ParsingStage.SYNTHESIS]),
+  32:     "clock_domain": frozenset([ParsingStage.RTL, ParsingStage.CONSTRAINTS]),
+  33:     "arrival_time": frozenset([ParsingStage.TIMING]),
+  34:     "required_time": frozenset([ParsingStage.TIMING]),
+  35:     "slack": frozenset([ParsingStage.TIMING]),
+  36:     
+  37:     # Edge fields
+  38:     "signal_name": frozenset([ParsingStage.RTL, ParsingStage.SYNTHESIS]),
+  39:     "flow_type": frozenset([ParsingStage.RTL, ParsingStage.CONSTRAINTS]),
+  40:     "clock_signal": frozenset([ParsingStage.CONSTRAINTS]),
+  41:     "reset_signal": frozenset([ParsingStage.CONSTRAINTS]),
+  42:     "delay": frozenset([ParsingStage.TIMING]),
+  43:     "timing_exception": frozenset([ParsingStage.CONSTRAINTS]),
+  44: }
+  45: 
+  46: 
+  47: def get_priority(source: FieldSource) -> int:
+  48:     """값 우선순위. 높을수록 신뢰도 높음."""
+  49:     priorities = {
+  50:         FieldSource.INFERRED: 1,
+  51:         FieldSource.DECLARED: 3,
+  52:         FieldSource.ANALYZED: 2,
+  53:         FieldSource.USER_OVERRIDE: 4,
+  54:     }
+  55:     return priorities[source]
+  56: 
+  57: 
+  58: def should_update_field(
+  59:     current_source: FieldSource | None,
+  60:     new_source: FieldSource,
+  61: ) -> bool:
+  62:     """기존 값을 새 값으로 업데이트할지 결정"""
+  63:     if current_source is None:
+  64:         return True
+  65:     return get_priority(new_source) >= get_priority(current_source)
 
 
 ================================================================================
