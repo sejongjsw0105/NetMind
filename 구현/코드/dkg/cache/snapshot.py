@@ -13,9 +13,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
-from ..graph import DKGEdge, DKGNode, EdgeFlowType, EntityClass, RelationType
-from ..provenance import Provenance
-from ..supergraph import SuperClass, SuperEdge, SuperGraph, SuperNode
+from ..core.graph import DKGEdge, DKGNode, EdgeFlowType, EntityClass, RelationType
+from ..core.provenance import Provenance
+from ..builders.supergraph import SuperClass, SuperEdge, SuperGraph, SuperNode
 from .graph_version import GraphVersion
 
 

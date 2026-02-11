@@ -2,22 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, List, Optional
-
-from .config import YosysConfig
-from .graph import DKGEdge, DKGNode
-from .graph_build import build_nodes_and_edges, build_wires_and_cells
-from .graph_updater import GraphUpdater
-from .graphcache import GraphSnapshot, GraphVersion, load_snapshot, save_snapshot
-from .parsers import ConstraintParser
-from .parsers.sdc_parser import SdcParser
-from .parsers.tcl_parser import TclParser
-from .parsers.timing_report_parser import TimingReportParser
-from .parsers.xdc_parser import XdcParser
-from .parsers.bd_parser import BdParser
+from ..utils.config import YosysConfig
+from ..core.graph import DKGEdge, DKGNode
+from ..builders.graph_build import build_nodes_and_edges, build_wires_and_cells
+from ..builders.graph_updater import GraphUpdater
+from ..cache import GraphSnapshot, GraphVersion, load_snapshot, save_snapshot
+from ..parsers import ConstraintParser
+from ..parsers.sdc_parser import SdcParser
+from ..parsers.tcl_parser import TclParser
+from ..parsers.timing_report_parser import TimingReportParser
+from ..parsers.xdc_parser import XdcParser
+from ..parsers.bd_parser import BdParser
 from .stages import FieldSource, ParsingStage
-from .supergraph import SuperGraph
-from .utils import compute_file_hash
-from .yosys_parser import parse_yosys
+from ..builders.supergraph import SuperGraph, GraphContext, ViewBuilder, GraphViewType
+from ..utils import compute_file_hash
+from ..parsers.yosys_parser import parse_yosys
 
 
 class DKGPipeline:
@@ -255,3 +254,28 @@ class DKGPipeline:
         
         return pipeline
 
+    def build_supergraph(self, view: GraphViewType = GraphViewType.Connectivity) -> None:
+
+            if self.nodes is None or self.edges is None:
+                raise RuntimeError("Run RTL stage first.")
+
+            context = GraphContext.DESIGN
+            
+
+            for node in self.nodes.values():
+                if node.attributes.get("design_context") == "sim":
+                    context = GraphContext.SIMULATION
+                    print(f"ℹ️ Simulation context detected from node attributes.")
+                    break
+            
+            print(f"🏗️ Building SuperGraph (View: {view.value}, Context: {context.value})...")
+            
+            view_builder = ViewBuilder(
+                self.nodes, 
+                self.edges, 
+                view, 
+                context=context  
+            )
+            
+            self.supergraph = view_builder.build()
+            print(f"✅ SuperGraph built: {len(self.supergraph.super_nodes)} nodes, {len(self.supergraph.super_edges)} edges.")

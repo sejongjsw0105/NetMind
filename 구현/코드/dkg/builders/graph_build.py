@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from .graph import (
+from ..core.graph import (
     DKGEdge,
     DKGNode,
     EdgeFlowType,
@@ -11,9 +11,9 @@ from .graph import (
     RelationType,
     make_node_canonical_name,
 )
-from .ir import CellIR, Wire
-from .provenance import Provenance, add_provenance, merge_provenances_edges
-from .utils import (
+from ..core.ir import CellIR, Wire
+from ..core.provenance import Provenance, add_provenance, merge_provenances_edges
+from ..utils import (
     is_active_low,
     is_clock_name,
     is_reset_name,

@@ -7,8 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-from .config import YosysConfig
-from .utils import win_to_wsl_path
+from ..utils.config import YosysConfig
+from ..utils import win_to_wsl_path
 
 
 def collect_hdl_files(src_dir_win: str) -> List[str]:

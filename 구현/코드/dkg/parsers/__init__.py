@@ -3,9 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from ..graph import DKGEdge, DKGNode
-from ..graph_updater import GraphUpdater
-from ..stages import ParsingStage
+from ..core.graph import DKGEdge, DKGNode
+from ..builders.graph_updater import GraphUpdater
+from ..pipeline.stages import ParsingStage
 
 
 class ConstraintParser(ABC):

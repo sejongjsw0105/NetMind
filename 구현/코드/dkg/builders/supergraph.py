@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from .graph import DKGEdge, DKGNode, EdgeFlowType, EntityClass, RelationType
-from .provenance import Provenance
-from .utils import stable_hash
+from ..core.graph import DKGEdge, DKGNode, EdgeFlowType, EntityClass, RelationType
+from ..core.provenance import Provenance
+from ..utils import stable_hash
 
 
 # ============================================================================
@@ -125,6 +125,17 @@ class GraphViewType(str, Enum):
     Structural = "Structural"
     Connectivity = "Connectivity"
     Physical = "Physical"
+
+
+class GraphContext(str, Enum):
+    """
+    그래프 생성 및 뷰 선택의 사용 맥락 정의.
+    
+    - DESIGN:      합성, 구현, 타이밍 분석 (물리적 실체 중심)
+    - SIMULATION:  동작 검증, 테스트벤치 (검증 환경 중심)
+    """
+    DESIGN = "design"
+    SIMULATION = "simulation"
 
 
 class SuperClass(str, Enum):
@@ -261,7 +272,14 @@ class NodePolicy:
     action: NodeAction
     super_class: Optional[SuperClass]  # PROMOTE면 None 가능
 
-POLICY_MAP: dict[GraphViewType, dict[EntityClass, NodePolicy]] = {
+
+# ============================================================================
+# POLICY_MAP_DESIGN: 합성/구현/타이밍 분석용 정책
+# ============================================================================
+# 목표: 실제 칩(FPGA/ASIC)에 배치되는 물리적 실체만 보존
+# 핵심 철학: "실제 하드웨어는 무엇인가?"
+# ============================================================================
+POLICY_MAP_DESIGN: dict[GraphViewType, dict[EntityClass, NodePolicy]] = {
 
     GraphViewType.Structural: {
         EntityClass.MODULE_INSTANCE: NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
@@ -311,19 +329,154 @@ POLICY_MAP: dict[GraphViewType, dict[EntityClass, NodePolicy]] = {
 }
 
 
+# ============================================================================
+# POLICY_MAP_SIMULATION: 동작 검증/테스트벤치용 정책
+# ============================================================================
+# 목표: 검증 환경과 테스트 대상(DUT)의 관계를 명확히 표현
+# 핵심 철학: "테스트에서 무엇을 검증하는가?"
+# ============================================================================
+POLICY_MAP_SIMULATION: dict[GraphViewType, dict[EntityClass, NodePolicy]] = {
 
-def get_node_policy(node: DKGNode, view: GraphViewType) -> NodePolicy:
-    return POLICY_MAP[view].get(
+    GraphViewType.Structural: {
+        # 시뮬레이션에서는 모듈 계층이 중요 (인터페이스 중심)
+        EntityClass.MODULE_INSTANCE: NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        EntityClass.IO_PORT:        NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        
+        # 초기값 설정 블록이나 클럭 생성기는 검증에 필수
+        # (파서가 이를 RTL_BLOCK으로 분류할 경우 보존)
+        EntityClass.RTL_BLOCK:      NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        
+        # 내부 로직은 과감하게 합침 (블랙박스 뷰)
+        EntityClass.FSM:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.FLIP_FLOP:      NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.LUT:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.MUX:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.DSP:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.BRAM:           NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+
+        # 물리적 제약은 시뮬레이션에서 무의미 -> 제거
+        EntityClass.PACKAGE_PIN:    NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+        EntityClass.PBLOCK:         NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+        EntityClass.BOARD_CONNECTOR:NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+    },
+
+    GraphViewType.Connectivity: {
+        # 모듈 인터페이스는 시뮬레이션의 주요 관심사
+        EntityClass.MODULE_INSTANCE: NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        EntityClass.IO_PORT:        NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        
+        # 레지스터는 상태 변화 추적에 유용할 수 있음
+        EntityClass.FLIP_FLOP:      NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        EntityClass.DSP:            NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        EntityClass.BRAM:           NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC),
+        
+        # 내부 로직은 DUT 블랙박스로 표현
+        EntityClass.RTL_BLOCK:      NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.FSM:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.LUT:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+        EntityClass.MUX:            NodePolicy(NodeAction.MERGE, SuperClass.MODULE_CLUSTER),
+
+        # 물리적 정보는 제거
+        EntityClass.PACKAGE_PIN:    NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+        EntityClass.PBLOCK:         NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+        EntityClass.BOARD_CONNECTOR:NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED),
+    },
+
+    GraphViewType.Physical: {
+        # Simulation에서는 Physical View가 의미 없음 (모두 제거)
+        # 필요시 향후 확장 가능
+    },
+}
+
+
+def select_policy_map(context: GraphContext) -> dict[GraphViewType, dict[EntityClass, NodePolicy]]:
+    """
+    컨텍스트에 따른 적절한 정책 맵 선택.
+    
+    Args:
+        context: GraphContext 값 (DESIGN 또는 SIMULATION)
+        
+    Returns:
+        선택된 정책 맵
+    """
+    if context == GraphContext.SIMULATION:
+        return POLICY_MAP_SIMULATION
+    else:
+        # 기본값: DESIGN
+        return POLICY_MAP_DESIGN
+
+
+def get_node_policy(
+    node: DKGNode,
+    view: GraphViewType,
+    context: GraphContext = GraphContext.DESIGN,
+) -> NodePolicy:
+    """
+    노드에 대한 정책 결정.
+    
+    Args:
+        node: 대상 노드
+        view: 그래프 뷰 타입
+        context: 사용 맥락 (기본값: DESIGN)
+        
+    Returns:
+        적용할 정책 (NodePolicy)
+        
+    원칙:
+    1. 컨텍스트에 따른 정책 맵 선택
+    2. 뷰에 해당하는 정책 조회
+    3. 엔티티 클래스에 따른 정책 반환
+    4. 속성 기반 동적 오버라이딩 (예: testbench 이름 패턴)
+    """
+    # 1. 컨텍스트에 따른 정책 맵 선택
+    policy_map = select_policy_map(context)
+    
+    # 2. 뷰에 해당하는 정책 조회
+    view_policies = policy_map.get(view, {})
+    
+    # 3. 엔티티 클래스에 따른 기본 정책
+    base_policy = view_policies.get(
         node.entity_class,
         NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED)
     )
+    
+    # 4. 속성 기반 동적 오버라이딩 (Task 12의 핵심)
+    # Design 모드에서: testbench 관련 요소는 강제 제거
+    if context == GraphContext.DESIGN:
+        is_testbench = (
+            node.local_name.lower().startswith("tb_") or
+            "testbench" in node.hier_path.lower() or
+            "sim" in node.hier_path.lower()
+        )
+        if is_testbench:
+            return NodePolicy(NodeAction.ELIMINATE, SuperClass.ELIMINATED)
+    
+    # Simulation 모드에서: 시뮬레이션 스큨러러스 생성기는 보존
+    if context == GraphContext.SIMULATION:
+        is_important_for_sim = (
+            node.local_name.lower().startswith("clk_gen") or
+            node.local_name.lower().startswith("reset_gen") or
+            "initial" in node.attributes.get("verilog_construct", "").lower()
+        )
+        if is_important_for_sim and base_policy.action == NodeAction.MERGE:
+            # 클럭/리셋 생성기는 Atomic으로 상향
+            return NodePolicy(NodeAction.PROMOTE, SuperClass.ATOMIC)
+    
+    return base_policy
 
 
 class ViewBuilder:
-    def __init__(self, nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge], view: GraphViewType):
+    def __init__(
+        self,
+        nodes: Dict[str, DKGNode],
+        edges: Dict[str, DKGEdge],
+        view: GraphViewType,
+        context: GraphContext = GraphContext.DESIGN,
+    ):
         self.nodes = nodes
         self.edges = edges
         self.view = view
+        self.context = context
 
         self.node_to_super: Dict[str, str] = {}
         self.super_nodes: Dict[str, SuperNode] = {}
@@ -340,7 +493,7 @@ class ViewBuilder:
 
     def cycle1_promote(self) -> None:
         for n in self.nodes.values():
-            node_policy = get_node_policy(n, self.view)
+            node_policy = get_node_policy(n, self.view, self.context)
             if node_policy.action != NodeAction.PROMOTE:
                 continue
             if node_policy.super_class is None:
@@ -362,7 +515,7 @@ class ViewBuilder:
         # 각 노드가 머지될 super_class 결정
         node_merge_class: Dict[str, SuperClass] = {}
         for nid, n in self.nodes.items():
-            node_policy = get_node_policy(n, self.view)
+            node_policy = get_node_policy(n, self.view, self.context)
             if node_policy.action == NodeAction.MERGE and node_policy.super_class is not None:
                 node_merge_class[nid] = node_policy.super_class
         
@@ -420,7 +573,7 @@ class ViewBuilder:
             if nid in self.node_to_super:
                 continue
 
-            node_policy = get_node_policy(n, self.view)
+            node_policy = get_node_policy(n, self.view, self.context)
             if node_policy.action != NodeAction.ELIMINATE:
                 raise RuntimeError(f"Unassigned node in view {self.view}: {nid}")
 
@@ -550,33 +703,3 @@ def get_timing_analysis_from_superedge(
         TimingEdgeMetrics or None if not attached
     """
     return se.analysis.get(AnalysisKind.TIMING)
-
-
-# ============================================================================
-# 향후 확장 예시 (Area / Power Analysis)
-# ============================================================================
-# 동일한 패턴으로 확장 가능:
-#
-# @dataclass(frozen=True)
-# class AreaMetrics:
-#     area_density: float
-#     area_utilization: float
-#     area_total: float
-#
-# @dataclass(frozen=True)
-# class PowerMetrics:
-#     power_peak: float
-#     power_average: float
-#     power_leakage: float
-#
-# def attach_area_analysis_to_supernode(sn: SuperNode, metrics: AreaMetrics) -> None:
-#     sn.analysis[AnalysisKind.AREA] = metrics
-#
-# def attach_power_analysis_to_supernode(sn: SuperNode, metrics: PowerMetrics) -> None:
-#     sn.analysis[AnalysisKind.POWER] = metrics
-#
-# 사용 예시:
-#     supernode.analysis[AnalysisKind.TIMING]  -> TimingNodeMetrics
-#     supernode.analysis[AnalysisKind.AREA]    -> AreaMetrics
-#     supernode.analysis[AnalysisKind.POWER]   -> PowerMetrics
-# ============================================================================

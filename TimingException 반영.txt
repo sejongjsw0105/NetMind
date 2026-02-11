@@ -1,0 +1,29 @@
+① TimingException 반영
+
+지금은:
+
+if edge.delay is not None:
+    delay_values.append(edge.delay)
+
+
+하지만:
+
+false_path
+
+multicycle_*
+
+을 집계에서 제외하거나 가중치 조정할지 정책이 아직 없음.
+
+➡️ 이건 버그가 아니라 정책 미정 상태
+(지금 단계에서 일부러 안 넣은 게 맞아 보임)
+
+② get_ports / get_pins 해석 정확도
+
+지금:
+
+regex.fullmatch(c)
+
+
+Vivado / PrimeTime의 실제 selector semantics(계층, bus, pin)는 더 복잡함
+
+하지만 이건 “파서 정밀도 문제”지 아키텍처 문제 아님

@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from typing import Dict
 
-from ..graph import DKGEdge, DKGNode
-from ..graph_updater import GraphUpdater
-from ..stages import FieldSource, ParsingStage
+from ..core.graph import DKGEdge, DKGNode
+from ..builders.graph_updater import GraphUpdater
+from ..pipeline.stages import FieldSource, ParsingStage
 from . import ConstraintParser
 from .parser_utils import extract_option_targets, match_any
 

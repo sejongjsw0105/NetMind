@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from .graph import DKGEdge, DKGNode
+from ..core.graph import DKGEdge, DKGNode
 from .graph_metadata import EdgeMetadata, NodeMetadata
-from .stages import FieldSource, ParsingStage
+from ..pipeline.stages import FieldSource, ParsingStage
 
 
 class GraphUpdater:

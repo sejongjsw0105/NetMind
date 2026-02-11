@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ..graph import DKGEdge, DKGNode
-from ..graph_updater import GraphUpdater
+from ..core.graph import DKGEdge, DKGNode
+from ..builders.graph_updater import GraphUpdater
 
 
 @dataclass

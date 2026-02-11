@@ -3,8 +3,8 @@ from __future__ import annotations
 import random
 from typing import Dict, Iterable, List
 
-from .graph import DKGEdge, DKGNode
-from .ir import CellIR, Wire
+from ..core.graph import DKGEdge, DKGNode
+from ..core.ir import CellIR, Wire
 
 
 def print_graph_summary(wires: Dict[int, Wire], cells: List[CellIR], nodes: Dict[str, DKGNode], edges: Dict[str, DKGEdge]) -> None:
